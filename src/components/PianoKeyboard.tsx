@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, useEffect } from 'react';
+import { useState } from 'react';
 
 interface PianoKeyboardProps {
   highlightedNotes: number[];
@@ -11,7 +11,6 @@ interface PianoKeyboardProps {
 const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
   highlightedNotes,
   targetNotes,
-  guideNote,
   onKeyPress,
   onKeyRelease,
 }) => {
@@ -87,7 +86,6 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
   };
 
   const renderOctave = (octaveIndex: number) => {
-    const notes = [];
     const whiteKeys: JSX.Element[] = [];
     const blackKeys: { note: number; element: JSX.Element }[] = [];
 
@@ -98,15 +96,18 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
       const keyElement = (
         <button
           key={note}
-          className={`relative transition-all duration-100 rounded-b-lg flex items-end justify-center pb-2 ${
-            isBlack
-              ? 'w-8 h-24 -mt-20 z-20 mx-[-16px]'
-              : 'w-12 h-36'
-          }`}
+          className={`relative transition-all duration-100 rounded-b-lg flex items-end justify-center pb-2 ${isBlack
+            ? 'w-8 h-24 -mt-20 z-20 mx-[-16px]'
+            : 'w-12 h-36'
+            }`}
           style={getKeyStyle(note)}
           onMouseDown={() => handleMouseDown(note)}
           onMouseUp={() => handleMouseUp(note)}
-          onMouseLeave={() => handleMouseUp(note)}
+          onMouseLeave={() => {
+            if (activeNotes.has(note)) {
+              handleMouseUp(note);
+            }
+          }}
           onTouchStart={(e) => {
             e.preventDefault();
             handleMouseDown(note);
@@ -143,14 +144,14 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
     return (
       <div key={octaveIndex} className="flex relative">
         <div className="flex">{whiteKeys}</div>
-        <div className="absolute inset-0 flex">
+        <div className="absolute inset-0 flex pointer-events-none">
           {blackKeys.map(({ note, element }) => {
             const noteIndex = note % 12;
             const position = getBlackKeyPosition(noteIndex);
             return (
               <div
                 key={note}
-                className="absolute"
+                className="absolute pointer-events-auto"
                 style={{ left: `${(position + 1) * 48 - 16}px` }}
               >
                 {element}

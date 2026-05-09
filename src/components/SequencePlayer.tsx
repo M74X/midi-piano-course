@@ -40,13 +40,14 @@ const SequencePlayer: React.FC<SequencePlayerProps> = ({
         </div>
         <button
           onClick={() => {
-            setIsAnimating(true);
-            onPlayGuide(currentNote);
-            setTimeout(() => setIsAnimating(false), 500);
+            if (currentNote !== undefined) {
+              setIsAnimating(true);
+              onPlayGuide(currentNote);
+              setTimeout(() => setIsAnimating(false), 500);
+            }
           }}
-          className={`px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition flex items-center gap-2 ${
-            isAnimating ? 'animate-pulse' : ''
-          }`}
+          className={`px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition flex items-center gap-2 ${isAnimating ? 'animate-pulse' : ''
+            }`}
         >
           <span>🔊</span>
           Escuchar Nota
@@ -55,9 +56,8 @@ const SequencePlayer: React.FC<SequencePlayerProps> = ({
 
       {/* Current Note Display */}
       <div className="flex items-center justify-center mb-4">
-        <div className={`bg-black/50 rounded-2xl p-8 border-2 ${
-          isAnimating ? 'border-cyan-400 shadow-lg shadow-cyan-400/50' : 'border-purple-500/50'
-        } transition-all`}>
+        <div className={`bg-black/50 rounded-2xl p-8 border-2 ${isAnimating ? 'border-cyan-400 shadow-lg shadow-cyan-400/50' : 'border-purple-500/50'
+          } transition-all`}>
           <div className="text-center">
             <span className="text-6xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
               {noteName}

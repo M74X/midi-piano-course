@@ -48,11 +48,21 @@ function App() {
   // Active notes tracking - store oscillators for proper cleanup
   const activeNotesRef = useRef<Map<number, { oscs: OscillatorNode[]; gainNode: GainNode }>>(new Map());
 
+  // MIDI debounce - prevent machine gun effect from duplicate NoteOn messages
+  const midiDebounceRef = useRef<Map<number, number>>(new Map());
+
   // Initialize audio context
   const initAudio = useCallback(() => {
     if (!audioContextRef.current) {
       audioContextRef.current = new AudioContext();
+    }
 
+    // Resume if suspended (browsers require user gesture to start audio)
+    if (audioContextRef.current.state === 'suspended') {
+      audioContextRef.current.resume();
+    }
+
+    if (!masterGainRef.current) {
       // Master gain
       masterGainRef.current = audioContextRef.current.createGain();
       masterGainRef.current.gain.value = volume;
@@ -117,12 +127,20 @@ function App() {
 
     // Stop any existing instance of this note first
     if (activeNotesRef.current.has(midiNote)) {
+      // Cancel pending release timeout — without this, the stale timeout fires
+      // after re-trigger and deletes the new note's map entry, making NoteOff a no-op
+      const existingTimeout = cleanupTimeoutsRef.current.get(midiNote);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+        cleanupTimeoutsRef.current.delete(midiNote);
+      }
       const existing = activeNotesRef.current.get(midiNote)!;
       try {
         existing.oscs.forEach(osc => osc.stop());
         existing.oscs.forEach(osc => osc.disconnect());
         existing.gainNode.disconnect();
-      } catch (e) {}
+      } catch (e) { }
+      activeNotesRef.current.delete(midiNote);
     }
 
     // Calculate frequency
@@ -156,18 +174,30 @@ function App() {
     gainNode.connect(filterNode);
 
     // Effects routing
-    if (distortion > 0 && distortionNodeRef.current) {
+    const dryGain = ctx.createGain();
+    const wetGain = ctx.createGain();
+    dryGain.gain.value = 1 - distortion;
+    wetGain.gain.value = distortion;
+
+    if (distortion > 0 && distortionNodeRef.current && masterGainRef.current) {
       filterNode.connect(distortionNodeRef.current);
-      distortionNodeRef.current.connect(masterGainRef.current!);
-    } else {
-      filterNode.connect(masterGainRef.current!);
+      distortionNodeRef.current.connect(wetGain);
+      wetGain.connect(masterGainRef.current);
+    }
+    filterNode.connect(dryGain);
+    if (masterGainRef.current) {
+      dryGain.connect(masterGainRef.current);
     }
 
-    if (delayMix > 0 && delayRef.current && delayFeedbackRef.current) {
+    if (delayMix > 0 && delayRef.current && delayFeedbackRef.current && masterGainRef.current) {
+      const delayGain = ctx.createGain();
+      delayGain.gain.value = delayMix;
       delayRef.current.delayTime.value = delayTime;
-      delayFeedbackRef.current.gain.value = delayMix * 0.5;
+      delayFeedbackRef.current.gain.value = 0.4;
       filterNode.connect(delayRef.current);
-      delayRef.current.connect(masterGainRef.current!);
+      // delayRef→delayFeedbackRef→delayRef loop already wired in initAudio; do NOT re-add
+      delayRef.current.connect(delayGain);
+      delayGain.connect(masterGainRef.current);
     }
 
     if (reverbMix > 0 && convolverRef.current) {
@@ -194,21 +224,32 @@ function App() {
     setIsPlaying(true);
   }, [initAudio, waveform, attack, decay, sustain, release, volume, detune, filterCutoff, reverbMix, delayTime, delayMix, distortion, chorusRate]);
 
+  // Track cleanup timeouts for proper cleanup
+  const cleanupTimeoutsRef = useRef<Map<number, number>>(new Map());
+
   const stopNote = useCallback((midiNote: number) => {
     const ctx = audioContextRef.current;
     if (ctx && activeNotesRef.current.has(midiNote)) {
+      // Clear any existing timeout for this note
+      const existingTimeout = cleanupTimeoutsRef.current.get(midiNote);
+      if (existingTimeout) {
+        clearTimeout(existingTimeout);
+      }
+
       const note = activeNotesRef.current.get(midiNote)!;
       // Apply release envelope
       note.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
       // Clean up after release
-      setTimeout(() => {
+      const timeoutId = window.setTimeout(() => {
         try {
           note.oscs.forEach(osc => osc.stop());
           note.oscs.forEach(osc => osc.disconnect());
           note.gainNode.disconnect();
-        } catch (e) {}
+        } catch (e) { }
         activeNotesRef.current.delete(midiNote);
+        cleanupTimeoutsRef.current.delete(midiNote);
       }, release * 1000 + 50);
+      cleanupTimeoutsRef.current.set(midiNote, timeoutId);
     }
   }, [release]);
 
@@ -226,7 +267,8 @@ function App() {
             // Lesson complete!
             setProgress(p => Math.min(p + 10, 100));
             setSequenceMode(false);
-            return prev;
+            setHighlightedNotes([]);
+            return 0;
           }
           return nextStep;
         });
@@ -260,24 +302,42 @@ function App() {
 
         // Note On (144-159) with velocity > 0
         if (status >= 144 && status <= 159 && velocity > 0) {
+          // Debounce: ignore NoteOn if same note fired less than 30ms ago
+          const now = performance.now();
+          const lastTrigger = midiDebounceRef.current.get(note);
+          if (lastTrigger && now - lastTrigger < 30) {
+            return; // Ignore duplicate NoteOn
+          }
+          midiDebounceRef.current.set(note, now);
+
           playNote(note, velocity / 127);
           handleKeyPress(note);
         }
-        // Note Off (128-143)
-        else if (status >= 128 && status <= 143) {
-          // Don't stop immediately on note off - let the envelope handle it
-          // This allows for smoother polyphonic playback
+        // Note Off (128-143) or Note On with velocity 0
+        else if (status >= 128 && status <= 143 || (status >= 144 && status <= 159 && velocity === 0)) {
+          stopNote(note);
         }
       }
     };
 
+    let midiAccess: MIDIAccess | null = null;
+
     if (navigator.requestMIDIAccess) {
       navigator.requestMIDIAccess().then(access => {
+        midiAccess = access;
         access.inputs.forEach(input => {
           input.onmidimessage = handleMidiMessage;
         });
-      }).catch(() => {});
+      }).catch(() => { });
     }
+
+    return () => {
+      if (midiAccess) {
+        midiAccess.inputs.forEach(input => {
+          input.onmidimessage = null;
+        });
+      }
+    };
   }, [playNote, handleKeyPress]);
 
   // Load lesson
@@ -367,6 +427,8 @@ function App() {
           setVolume={setVolume}
           detune={detune}
           setDetune={setDetune}
+          filterCutoff={filterCutoff}
+          setFilterCutoff={setFilterCutoff}
         />
 
         {/* Effects */}
@@ -406,11 +468,10 @@ function App() {
         <div className="flex justify-center mb-6">
           <button
             onClick={() => setSequenceMode(!sequenceMode)}
-            className={`px-6 py-3 rounded-full font-bold transition-all ${
-              sequenceMode
-                ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
-                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-            }`}
+            className={`px-6 py-3 rounded-full font-bold transition-all ${sequenceMode
+              ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
+              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+              }`}
           >
             {sequenceMode ? '🎯 Modo Secuencia Activo' : '🎸 Modo Libre'}
           </button>

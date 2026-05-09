@@ -39,14 +39,17 @@ const Metronome: React.FC<MetronomeProps> = ({ bpm, setBpm }) => {
   }, []);
 
   useEffect(() => {
+    // Clear existing interval when bpm changes
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+
     if (isPlaying) {
       const interval = 60000 / bpm;
       intervalRef.current = window.setInterval(playTick, interval);
-    } else {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
     }
+
     return () => {
       if (intervalRef.current) {
         clearInterval(intervalRef.current);
@@ -60,11 +63,10 @@ const Metronome: React.FC<MetronomeProps> = ({ bpm, setBpm }) => {
         <div className="flex items-center gap-4">
           <button
             onClick={() => setIsPlaying(!isPlaying)}
-            className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transition-all ${
-              isPlaying
+            className={`w-12 h-12 rounded-full flex items-center justify-center text-2xl transition-all ${isPlaying
                 ? 'bg-gradient-to-r from-red-500 to-pink-500 shadow-lg shadow-red-500/50 animate-pulse'
                 : 'bg-gray-700 hover:bg-gray-600'
-            }`}
+              }`}
           >
             {isPlaying ? '⏸️' : '▶️'}
           </button>
@@ -85,11 +87,10 @@ const Metronome: React.FC<MetronomeProps> = ({ bpm, setBpm }) => {
             <button
               key={preset.name}
               onClick={() => setBpm(preset.bpm)}
-              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${
-                bpm === preset.bpm
+              className={`px-3 py-1 rounded-full text-xs font-bold transition-all ${bpm === preset.bpm
                   ? 'bg-cyan-500 text-black'
                   : 'bg-gray-800 text-gray-400 hover:bg-gray-700 hover:text-white'
-              }`}
+                }`}
             >
               {preset.name}
             </button>

@@ -15,6 +15,8 @@ interface SynthControlsProps {
   setVolume: (v: number) => void;
   detune: number;
   setDetune: (v: number) => void;
+  filterCutoff: number;
+  setFilterCutoff: (v: number) => void;
 }
 
 const SynthControls: React.FC<SynthControlsProps> = ({
@@ -25,6 +27,7 @@ const SynthControls: React.FC<SynthControlsProps> = ({
   release, setRelease,
   volume, setVolume,
   detune, setDetune,
+  filterCutoff, setFilterCutoff,
 }) => {
   const waveforms: Array<'sine' | 'square' | 'sawtooth' | 'triangle'> = ['sine', 'square', 'sawtooth', 'triangle'];
   const waveformIcons: Record<string, string> = {
@@ -48,11 +51,10 @@ const SynthControls: React.FC<SynthControlsProps> = ({
             <button
               key={w}
               onClick={() => setWaveform(w)}
-              className={`flex-1 py-3 px-4 rounded-lg font-bold text-xl transition-all ${
-                waveform === w
+              className={`flex-1 py-3 px-4 rounded-lg font-bold text-xl transition-all ${waveform === w
                   ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg shadow-pink-500/50'
                   : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
+                }`}
             >
               {waveformIcons[w]}
             </button>
@@ -71,6 +73,7 @@ const SynthControls: React.FC<SynthControlsProps> = ({
               setDecay(preset.decay);
               setSustain(preset.sustain);
               setRelease(preset.release);
+              setFilterCutoff(preset.filterCutoff);
             }}
             className="px-3 py-1 bg-gray-800 hover:bg-gray-700 rounded-full text-sm text-gray-300 border border-gray-700 hover:border-pink-500/50 transition-all"
           >

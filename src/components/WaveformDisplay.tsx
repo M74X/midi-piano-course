@@ -14,7 +14,7 @@ const WaveformDisplay: React.FC<WaveformDisplayProps> = ({ isPlaying }) => {
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationId: number;
+    let animationId: number | null = null;
     let phase = 0;
 
     const draw = () => {
