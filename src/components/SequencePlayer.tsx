@@ -1,122 +1,169 @@
 import { useState, useEffect } from 'react';
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
 interface SequencePlayerProps {
   targetNotes: number[];
   currentStep: number;
-  onPlayGuide: (note: number) => void;
   lessonName: string;
+  lessonTip: string;
+  correctCount: number;
+  wrongCount: number;
+  streak: number;
+  isDemoPlaying: boolean;
+  demoStep: number;
+  onPlayGuide: (note: number) => void;
+  onPlayDemo: () => void;
 }
-
-const noteNames = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
 const SequencePlayer: React.FC<SequencePlayerProps> = ({
   targetNotes,
   currentStep,
+  lessonName,
+  lessonTip,
+  correctCount,
+  wrongCount,
+  streak,
+  isDemoPlaying,
+  demoStep,
   onPlayGuide,
-  lessonName
+  onPlayDemo,
 }) => {
-  const [isAnimating, setIsAnimating] = useState(false);
+  const [wrongFlash, setWrongFlash] = useState(false);
 
-  const currentNote = targetNotes[currentStep];
-  const noteName = currentNote !== undefined ? noteNames[currentNote % 12] : '';
+  const total = correctCount + wrongCount;
+  const accuracy = total > 0 ? Math.round((correctCount / total) * 100) : 100;
+
+  const displayStep = isDemoPlaying ? demoStep : currentStep;
+  const currentNote = targetNotes[displayStep];
+  const noteName = currentNote !== undefined ? NOTE_NAMES[currentNote % 12] : '–';
   const octave = currentNote !== undefined ? Math.floor(currentNote / 12) - 1 : 4;
 
-  const completedSteps = currentStep;
-  const totalSteps = targetNotes.length;
-  const progressPercent = totalSteps > 0 ? (completedSteps / totalSteps) * 100 : 0;
+  useEffect(() => {
+    if (wrongCount === 0) return;
+    setWrongFlash(true);
+    const t = setTimeout(() => setWrongFlash(false), 400);
+    return () => clearTimeout(t);
+  }, [wrongCount]);
 
   return (
-    <div className="mb-6 bg-gradient-to-r from-cyan-900/30 via-purple-900/30 to-pink-900/30 rounded-2xl p-6 border border-cyan-500/30 backdrop-blur-sm">
+    <div className="bg-gradient-to-r from-cyan-900/25 via-purple-900/25 to-pink-900/25 rounded-xl p-4 border border-cyan-500/20 backdrop-blur-sm">
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="text-xl font-bold text-cyan-400 flex items-center gap-2">
-            <span className="text-2xl">🎯</span>
-            {lessonName}
-          </h3>
-          <p className="text-gray-400 text-sm mt-1">
-            Nota {currentStep + 1} de {totalSteps}
+      <div className="flex items-center justify-between mb-3">
+        <div className="min-w-0">
+          <h3 className="text-base font-bold text-cyan-400 truncate">{lessonName}</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
+            {isDemoPlaying
+              ? `Demo: nota ${demoStep + 1}/${targetNotes.length}`
+              : `Paso ${Math.min(currentStep + 1, targetNotes.length)} / ${targetNotes.length}`}
           </p>
         </div>
-        <button
-          onClick={() => {
-            if (currentNote !== undefined) {
-              setIsAnimating(true);
-              onPlayGuide(currentNote);
-              setTimeout(() => setIsAnimating(false), 500);
-            }
-          }}
-          className={`px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition flex items-center gap-2 ${isAnimating ? 'animate-pulse' : ''
+
+        {/* Demo + guide buttons */}
+        <div className="flex gap-2 flex-shrink-0 ml-2">
+          <button
+            onClick={() => !isDemoPlaying && currentNote !== undefined && onPlayGuide(currentNote)}
+            disabled={isDemoPlaying}
+            className="px-3 py-1.5 bg-purple-500/20 text-purple-300 rounded-lg hover:bg-purple-500/30 transition text-xs disabled:opacity-40"
+          >
+            🔊 Nota
+          </button>
+          <button
+            onClick={onPlayDemo}
+            className={`px-3 py-1.5 rounded-lg transition text-xs font-bold ${
+              isDemoPlaying
+                ? 'bg-red-500/30 text-red-300 hover:bg-red-500/40 animate-pulse'
+                : 'bg-cyan-500/20 text-cyan-300 hover:bg-cyan-500/30'
             }`}
-        >
-          <span>🔊</span>
-          Escuchar Nota
-        </button>
+          >
+            {isDemoPlaying ? '⏹ Stop' : '▶ Demo'}
+          </button>
+        </div>
       </div>
 
-      {/* Current Note Display */}
-      <div className="flex items-center justify-center mb-4">
-        <div className={`bg-black/50 rounded-2xl p-8 border-2 ${isAnimating ? 'border-cyan-400 shadow-lg shadow-cyan-400/50' : 'border-purple-500/50'
-          } transition-all`}>
-          <div className="text-center">
-            <span className="text-6xl font-bold bg-gradient-to-r from-cyan-400 via-purple-400 to-pink-400 bg-clip-text text-transparent">
-              {noteName}
+      {/* Score row */}
+      <div className="grid grid-cols-3 gap-2 mb-3">
+        <div className="bg-black/30 rounded-lg p-2 text-center">
+          <p className="text-lg font-bold text-green-400 leading-none">{correctCount}</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">CORRECTAS</p>
+        </div>
+        <div className={`bg-black/30 rounded-lg p-2 text-center transition-colors ${wrongFlash ? 'bg-red-900/50' : ''}`}>
+          <p className={`text-lg font-bold leading-none transition-colors ${wrongFlash ? 'text-red-400' : 'text-red-500'}`}>
+            {wrongCount}
+          </p>
+          <p className="text-[10px] text-gray-600 mt-0.5">ERRORES</p>
+        </div>
+        <div className="bg-black/30 rounded-lg p-2 text-center">
+          <p className="text-lg font-bold text-purple-400 leading-none">{streak}</p>
+          <p className="text-[10px] text-gray-600 mt-0.5">RACHA</p>
+        </div>
+      </div>
+
+      {/* Accuracy bar */}
+      {total > 0 && (
+        <div className="mb-3">
+          <div className="flex justify-between text-[10px] mb-0.5">
+            <span className="text-gray-600">Precisión</span>
+            <span className={accuracy >= 80 ? 'text-green-400' : accuracy >= 60 ? 'text-yellow-400' : 'text-red-400'}>
+              {accuracy}%
             </span>
-            <span className="text-3xl font-bold text-gray-400 ml-2">
-              {octave}
-            </span>
-            <p className="text-gray-400 text-sm mt-2">MIDI: {currentNote}</p>
+          </div>
+          <div className="h-1.5 bg-gray-800 rounded-full overflow-hidden">
+            <div
+              className={`h-full rounded-full transition-all duration-300 ${
+                accuracy >= 80 ? 'bg-gradient-to-r from-cyan-500 to-green-500' :
+                accuracy >= 60 ? 'bg-gradient-to-r from-yellow-500 to-orange-500' :
+                'bg-gradient-to-r from-red-500 to-pink-500'
+              }`}
+              style={{ width: `${accuracy}%` }}
+            />
           </div>
         </div>
-      </div>
+      )}
 
-      {/* Progress Bar */}
-      <div className="mb-4">
-        <div className="flex justify-between text-sm text-gray-400 mb-2">
-          <span>Progreso</span>
-          <span>{completedSteps}/{totalSteps}</span>
+      {/* Current note + sequence dots */}
+      <div className="flex items-center gap-3">
+        <div className={`flex-shrink-0 w-14 h-14 rounded-xl border flex flex-col items-center justify-center transition-all
+          ${wrongFlash ? 'border-red-500 bg-red-900/30'
+            : isDemoPlaying ? 'border-yellow-400/60 bg-yellow-900/20'
+            : 'border-cyan-500/40 bg-black/40'}`}>
+          <span className={`text-2xl font-bold leading-none ${
+            wrongFlash ? 'text-red-400' : isDemoPlaying ? 'text-yellow-400' : 'text-cyan-300'}`}>
+            {wrongFlash ? '✗' : noteName}
+          </span>
+          {!wrongFlash && <span className="text-xs text-gray-500">{octave}</span>}
         </div>
-        <div className="h-3 bg-gray-800/50 rounded-full overflow-hidden">
-          <div
-            className="h-full bg-gradient-to-r from-cyan-500 via-purple-500 to-pink-500 transition-all duration-300"
-            style={{ width: `${progressPercent}%` }}
-          />
-        </div>
-      </div>
 
-      {/* Note Sequence Visualization */}
-      <div className="flex gap-1 overflow-x-auto pb-2">
-        {targetNotes.map((note, index) => {
-          const isCompleted = index < currentStep;
-          const isCurrent = index === currentStep;
-          const noteName = noteNames[note % 12];
-
-          return (
+        <div className="flex flex-wrap gap-1 flex-1 overflow-hidden" style={{ maxHeight: 52 }}>
+          {targetNotes.map((note, i) => (
             <button
-              key={index}
+              key={i}
               onClick={() => onPlayGuide(note)}
-              className={`
-                min-w-[48px] h-12 rounded-lg font-bold text-sm transition-all flex items-center justify-center
-                ${isCompleted
-                  ? 'bg-green-500/30 text-green-400 border border-green-500/50'
-                  : isCurrent
-                    ? 'bg-cyan-500/50 text-cyan-300 border-2 border-cyan-400 animate-pulse'
-                    : 'bg-gray-800/50 text-gray-500 border border-gray-700 hover:bg-gray-700'
-                }
-              `}
+              className={`w-7 h-7 rounded text-[10px] font-bold transition-all ${
+                i < (isDemoPlaying ? demoStep : currentStep)
+                  ? 'bg-green-500/30 text-green-400'
+                  : i === (isDemoPlaying ? demoStep : currentStep)
+                    ? isDemoPlaying
+                      ? 'bg-yellow-400/60 text-yellow-900 border border-yellow-400'
+                      : 'bg-cyan-500/60 text-cyan-100 border border-cyan-400 animate-pulse'
+                    : 'bg-gray-800/50 text-gray-600'
+              }`}
             >
-              {noteName}
+              {NOTE_NAMES[note % 12]}
             </button>
-          );
-        })}
+          ))}
+        </div>
       </div>
 
-      {/* Instructions */}
-      <div className="mt-4 p-3 bg-black/30 rounded-lg text-center">
-        <p className="text-purple-300 text-sm">
-          Toca la nota indicada en tu teclado MIDI o haz clic en las teclas
-        </p>
+      {/* Step progress bar */}
+      <div className="h-1 bg-gray-800 rounded-full overflow-hidden mt-3">
+        <div
+          className={`h-full rounded-full transition-all duration-200 ${isDemoPlaying ? 'bg-yellow-400' : 'bg-gradient-to-r from-cyan-500 to-purple-500'}`}
+          style={{ width: `${targetNotes.length > 0 ? ((isDemoPlaying ? demoStep + 1 : currentStep) / targetNotes.length) * 100 : 0}%` }}
+        />
       </div>
+
+      <p className="text-[10px] text-gray-600 mt-2 italic truncate">{lessonTip}</p>
     </div>
   );
 };

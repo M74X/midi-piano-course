@@ -2,22 +2,121 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import PianoKeyboard from './components/PianoKeyboard';
 import SynthControls from './components/SynthControls';
 import EffectsPanel from './components/EffectsPanel';
-import LessonGrid from './components/LessonGrid';
-import Metronome from './components/Metronome';
-import WaveformDisplay from './components/WaveformDisplay';
 import SequencePlayer from './components/SequencePlayer';
-import { lessons } from './data/synthLessons';
+import PianoRoll from './components/PianoRoll';
+import WaveformDisplay from './components/WaveformDisplay';
+import { lessons, genreIcons, genrePresets } from './data/synthLessons';
 
+export type LessonScore = { accuracy: number; completed: boolean };
+
+// ── BPM strip ────────────────────────────────────────────────────────────────
+const BPM_PRESETS = [60, 80, 100, 120, 140, 160];
+
+function BpmControl({ bpm, setBpm }: { bpm: number; setBpm: (v: number) => void }) {
+  return (
+    <div className="flex items-center gap-3 px-1">
+      <span className="text-[9px] text-gray-600 font-bold tracking-widest">BPM</span>
+      <button onClick={() => setBpm(Math.max(40, bpm - 5))} className="w-6 h-6 rounded bg-gray-900 hover:bg-gray-800 text-gray-500 text-sm flex items-center justify-center">−</button>
+      <span className="text-sm font-bold text-cyan-400 w-8 text-center tabular-nums">{bpm}</span>
+      <button onClick={() => setBpm(Math.min(240, bpm + 5))} className="w-6 h-6 rounded bg-gray-900 hover:bg-gray-800 text-gray-500 text-sm flex items-center justify-center">+</button>
+      <input
+        type="range" min="40" max="240" value={bpm}
+        onChange={e => setBpm(+e.target.value)}
+        className="w-20 h-1 bg-gray-800 rounded appearance-none cursor-pointer accent-cyan-500"
+      />
+      <div className="flex gap-1">
+        {BPM_PRESETS.map(p => (
+          <button
+            key={p}
+            onClick={() => setBpm(p)}
+            className={`px-1.5 py-0.5 rounded text-[9px] font-bold transition-all ${bpm === p ? 'bg-cyan-500 text-black' : 'bg-gray-900 text-gray-600 hover:bg-gray-800'}`}
+          >{p}</button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ── Genre badge ───────────────────────────────────────────────────────────────
+const GENRE_STYLE: Record<string, { pill: string; dot: string }> = {
+  darkwave: { pill: 'bg-purple-900/40 text-purple-400 border border-purple-500/30', dot: 'bg-purple-500' },
+  synthwave: { pill: 'bg-pink-900/40 text-pink-400 border border-pink-500/30',      dot: 'bg-pink-500' },
+  darkphonk: { pill: 'bg-red-900/40 text-red-400 border border-red-500/30',         dot: 'bg-red-500' },
+};
+
+// ── Lesson sidebar item ───────────────────────────────────────────────────────
+function SidebarLesson({
+  lesson, isActive, score, onClick,
+}: {
+  lesson: typeof lessons[0]; isActive: boolean;
+  score?: LessonScore; onClick: () => void;
+}) {
+  const gs = GENRE_STYLE[lesson.genre];
+  return (
+    <button
+      onClick={onClick}
+      className={`w-full text-left px-2.5 py-2 transition-all border-l-2 ${
+        isActive
+          ? 'bg-purple-900/40 border-l-pink-500 border-b border-gray-800'
+          : 'border-l-transparent hover:bg-gray-900/60 border-b border-gray-900/60'
+      }`}
+    >
+      {/* Name row */}
+      <div className="flex items-start justify-between gap-1 mb-1">
+        <span className="text-[11px] font-medium leading-tight flex-1 min-w-0 truncate">
+          {lesson.name}
+        </span>
+        {score?.completed && (
+          <span className={`text-[9px] font-bold flex-shrink-0 tabular-nums ${
+            score.accuracy >= 80 ? 'text-green-400' : score.accuracy >= 60 ? 'text-yellow-400' : 'text-orange-400'
+          }`}>
+            {score.accuracy}%
+          </span>
+        )}
+      </div>
+      {/* Meta row */}
+      <div className="flex items-center gap-1.5 flex-wrap">
+        {/* Genre chip */}
+        <span className={`inline-flex items-center gap-0.5 text-[9px] px-1.5 py-0.5 rounded-full font-bold ${gs.pill}`}>
+          <span>{genreIcons[lesson.genre]}</span>
+          <span>{lesson.genre}</span>
+        </span>
+        <span className="text-[9px] text-gray-700">{lesson.bpm}bpm</span>
+        <span className={`text-[9px] font-bold ${
+          lesson.difficulty === 'Easy' ? 'text-green-700' :
+          lesson.difficulty === 'Medium' ? 'text-yellow-700' : 'text-red-700'
+        }`}>{lesson.difficulty}</span>
+      </div>
+    </button>
+  );
+}
+
+// ── App ───────────────────────────────────────────────────────────────────────
 function App() {
+  // Lesson
   const [currentLesson, setCurrentLesson] = useState(0);
   const [targetNotes, setTargetNotes] = useState<number[]>([]);
   const [highlightedNotes, setHighlightedNotes] = useState<number[]>([]);
-  const [progress, setProgress] = useState(0);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [bpm, setBpm] = useState(120);
   const [currentStep, setCurrentStep] = useState(0);
   const [sequenceMode, setSequenceMode] = useState(false);
-  const [showGuideNote, setShowGuideNote] = useState(true);
+  const [bpm, setBpm] = useState(120);
+  const [lessonScores, setLessonScores] = useState<Record<number, LessonScore>>({});
+  const [lessonComplete, setLessonComplete] = useState<{ accuracy: number } | null>(null);
+
+  // Score
+  const [correctCount, setCorrectCount] = useState(0);
+  const [wrongCount, setWrongCount] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [wrongNoteFlash, setWrongNoteFlash] = useState<number | null>(null);
+
+  // Demo
+  const [isDemoPlaying, setIsDemoPlaying] = useState(false);
+  const [demoStep, setDemoStep] = useState(-1);
+  const demoTimeoutsRef = useRef<number[]>([]);
+
+  // UI
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [pressedNotes, setPressedNotes] = useState<number[]>([]);
 
   // Synth params
   const [waveform, setWaveform] = useState<'sine' | 'square' | 'sawtooth' | 'triangle'>('sawtooth');
@@ -28,7 +127,7 @@ function App() {
   const [volume, setVolume] = useState(0.7);
   const [detune, setDetune] = useState(0);
 
-  // Effects
+  // FX
   const [reverbMix, setReverbMix] = useState(0.3);
   const [delayTime, setDelayTime] = useState(0.4);
   const [delayMix, setDelayMix] = useState(0.2);
@@ -44,470 +143,449 @@ function App() {
   const masterGainRef = useRef<GainNode | null>(null);
   const distortionNodeRef = useRef<DynamicsCompressorNode | null>(null);
   const chorusNodesRef = useRef<{ delay: DelayNode; lfo: OscillatorNode; lfoGain: GainNode }[]>([]);
-
-  // Active notes tracking - store oscillators for proper cleanup
   const activeNotesRef = useRef<Map<number, { oscs: OscillatorNode[]; gainNode: GainNode }>>(new Map());
-
-  // MIDI debounce - prevent machine gun effect from duplicate NoteOn messages
+  const cleanupTimeoutsRef = useRef<Map<number, number>>(new Map());
   const midiDebounceRef = useRef<Map<number, number>>(new Map());
 
-  // Initialize audio context
+  // ── Audio init ────────────────────────────────────────────────────────────
   const initAudio = useCallback(() => {
-    if (!audioContextRef.current) {
-      audioContextRef.current = new AudioContext();
-    }
-
-    // Resume if suspended (browsers require user gesture to start audio)
-    if (audioContextRef.current.state === 'suspended') {
-      audioContextRef.current.resume();
-    }
-
+    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
+    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
     if (!masterGainRef.current) {
-      // Master gain
-      masterGainRef.current = audioContextRef.current.createGain();
+      const ctx = audioContextRef.current;
+      masterGainRef.current = ctx.createGain();
       masterGainRef.current.gain.value = volume;
-      masterGainRef.current.connect(audioContextRef.current.destination);
+      masterGainRef.current.connect(ctx.destination);
 
-      // Create reverb impulse response
-      convolverRef.current = audioContextRef.current.createConvolver();
-      const reverbLength = 2;
-      const sampleRate = audioContextRef.current.sampleRate;
-      const impulse = audioContextRef.current.createBuffer(2, sampleRate * reverbLength, sampleRate);
-      for (let channel = 0; channel < 2; channel++) {
-        const channelData = impulse.getChannelData(channel);
-        for (let i = 0; i < channelData.length; i++) {
-          channelData[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sampleRate * 0.5));
-        }
+      convolverRef.current = ctx.createConvolver();
+      const sr = ctx.sampleRate;
+      const imp = ctx.createBuffer(2, sr * 2, sr);
+      for (let ch = 0; ch < 2; ch++) {
+        const d = imp.getChannelData(ch);
+        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.5));
       }
-      convolverRef.current.buffer = impulse;
+      convolverRef.current.buffer = imp;
 
-      // Delay node
-      delayRef.current = audioContextRef.current.createDelay(1);
+      delayRef.current = ctx.createDelay(1);
       delayRef.current.delayTime.value = delayTime;
-      delayFeedbackRef.current = audioContextRef.current.createGain();
+      delayFeedbackRef.current = ctx.createGain();
       delayFeedbackRef.current.gain.value = 0.4;
       delayRef.current.connect(delayFeedbackRef.current);
       delayFeedbackRef.current.connect(delayRef.current);
 
-      // Distortion
-      distortionNodeRef.current = audioContextRef.current.createDynamicsCompressor();
+      distortionNodeRef.current = ctx.createDynamicsCompressor();
       distortionNodeRef.current.threshold.value = -20;
       distortionNodeRef.current.knee.value = 10;
       distortionNodeRef.current.ratio.value = 4;
 
-      // Chorus setup
-      const chorus1Delay = audioContextRef.current.createDelay(0.05);
-      const chorus1Lfo = audioContextRef.current.createOscillator();
-      const chorus1LfoGain = audioContextRef.current.createGain();
-      chorus1Lfo.frequency.value = 1.5;
-      chorus1Lfo.type = 'sine';
-      chorus1LfoGain.gain.value = 0.002;
-      chorus1Lfo.connect(chorus1LfoGain);
-      chorus1LfoGain.connect(chorus1Delay.delayTime);
-      chorus1Lfo.start();
-      chorusNodesRef.current.push({ delay: chorus1Delay, lfo: chorus1Lfo, lfoGain: chorus1LfoGain });
-
-      const chorus2Delay = audioContextRef.current.createDelay(0.05);
-      const chorus2Lfo = audioContextRef.current.createOscillator();
-      const chorus2LfoGain = audioContextRef.current.createGain();
-      chorus2Lfo.frequency.value = 1.8;
-      chorus2Lfo.type = 'sine';
-      chorus2LfoGain.gain.value = 0.0015;
-      chorus2Lfo.connect(chorus2LfoGain);
-      chorus2LfoGain.connect(chorus2Delay.delayTime);
-      chorus2Lfo.start();
-      chorusNodesRef.current.push({ delay: chorus2Delay, lfo: chorus2Lfo, lfoGain: chorus2LfoGain });
+      const mkChorus = (freq: number, depth: number) => {
+        const d = ctx.createDelay(0.05);
+        const lfo = ctx.createOscillator();
+        const g = ctx.createGain();
+        lfo.frequency.value = freq; lfo.type = 'sine'; g.gain.value = depth;
+        lfo.connect(g); g.connect(d.delayTime); lfo.start();
+        chorusNodesRef.current.push({ delay: d, lfo, lfoGain: g });
+      };
+      mkChorus(1.5, 0.002); mkChorus(1.8, 0.0015);
     }
     return audioContextRef.current;
   }, []);
 
-  // TRUE POLYPHONY - Allow multiple notes to play simultaneously
-  const playNote = useCallback((midiNote: number, velocity: number = 0.8) => {
+  // ── Play / Stop note ─────────────────────────────────────────────────────
+  const playNote = useCallback((midiNote: number, velocity = 0.8) => {
     const ctx = initAudio();
-
-    // Stop any existing instance of this note first
     if (activeNotesRef.current.has(midiNote)) {
-      // Cancel pending release timeout — without this, the stale timeout fires
-      // after re-trigger and deletes the new note's map entry, making NoteOff a no-op
-      const existingTimeout = cleanupTimeoutsRef.current.get(midiNote);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-        cleanupTimeoutsRef.current.delete(midiNote);
-      }
-      const existing = activeNotesRef.current.get(midiNote)!;
-      try {
-        existing.oscs.forEach(osc => osc.stop());
-        existing.oscs.forEach(osc => osc.disconnect());
-        existing.gainNode.disconnect();
-      } catch (e) { }
+      const t = cleanupTimeoutsRef.current.get(midiNote);
+      if (t) { clearTimeout(t); cleanupTimeoutsRef.current.delete(midiNote); }
+      const old = activeNotesRef.current.get(midiNote)!;
+      try { old.oscs.forEach(o => o.stop()); old.oscs.forEach(o => o.disconnect()); old.gainNode.disconnect(); } catch (_) {}
       activeNotesRef.current.delete(midiNote);
     }
 
-    // Calculate frequency
     const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
+    const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator();
+    const gainNode = ctx.createGain(), filterNode = ctx.createBiquadFilter();
+    osc1.type = waveform; osc1.frequency.value = freq * (1 + detune / 1000);
+    osc2.type = waveform; osc2.frequency.value = freq * 2.02;
+    filterNode.type = 'lowpass'; filterNode.frequency.value = filterCutoff; filterNode.Q.value = 2;
 
-    // Create oscillators for richer sound
-    const osc1 = ctx.createOscillator();
-    const osc2 = ctx.createOscillator();
-    const gainNode = ctx.createGain();
-    const filterNode = ctx.createBiquadFilter();
-
-    osc1.frequency.value = freq * (1 + detune / 1000);
-    osc2.frequency.value = freq * 2.02;
-    osc1.type = waveform;
-    osc2.type = waveform;
-
-    // Filter
-    filterNode.type = 'lowpass';
-    filterNode.frequency.value = filterCutoff;
-    filterNode.Q.value = 2;
-
-    // ADSR envelope
     const now = ctx.currentTime;
     gainNode.gain.setValueAtTime(0, now);
     gainNode.gain.linearRampToValueAtTime(velocity * volume, now + attack);
     gainNode.gain.exponentialRampToValueAtTime(velocity * volume * sustain, now + attack + decay);
+    osc1.connect(gainNode); osc2.connect(gainNode); gainNode.connect(filterNode);
 
-    // Connect
-    osc1.connect(gainNode);
-    osc2.connect(gainNode);
-    gainNode.connect(filterNode);
-
-    // Effects routing
-    const dryGain = ctx.createGain();
-    const wetGain = ctx.createGain();
-    dryGain.gain.value = 1 - distortion;
-    wetGain.gain.value = distortion;
-
+    const dry = ctx.createGain(); dry.gain.value = 1 - distortion;
+    const wet = ctx.createGain(); wet.gain.value = distortion;
     if (distortion > 0 && distortionNodeRef.current && masterGainRef.current) {
-      filterNode.connect(distortionNodeRef.current);
-      distortionNodeRef.current.connect(wetGain);
-      wetGain.connect(masterGainRef.current);
+      filterNode.connect(distortionNodeRef.current); distortionNodeRef.current.connect(wet); wet.connect(masterGainRef.current);
     }
-    filterNode.connect(dryGain);
-    if (masterGainRef.current) {
-      dryGain.connect(masterGainRef.current);
-    }
+    filterNode.connect(dry);
+    if (masterGainRef.current) dry.connect(masterGainRef.current);
 
     if (delayMix > 0 && delayRef.current && delayFeedbackRef.current && masterGainRef.current) {
-      const delayGain = ctx.createGain();
-      delayGain.gain.value = delayMix;
+      const dg = ctx.createGain(); dg.gain.value = delayMix;
       delayRef.current.delayTime.value = delayTime;
-      delayFeedbackRef.current.gain.value = 0.4;
-      filterNode.connect(delayRef.current);
-      // delayRef→delayFeedbackRef→delayRef loop already wired in initAudio; do NOT re-add
-      delayRef.current.connect(delayGain);
-      delayGain.connect(masterGainRef.current);
+      filterNode.connect(delayRef.current); delayRef.current.connect(dg); dg.connect(masterGainRef.current);
     }
-
-    if (reverbMix > 0 && convolverRef.current) {
-      const reverbGain = ctx.createGain();
-      reverbGain.gain.value = reverbMix;
-      filterNode.connect(reverbGain);
-      reverbGain.connect(convolverRef.current);
-      convolverRef.current.connect(masterGainRef.current!);
+    if (reverbMix > 0 && convolverRef.current && masterGainRef.current) {
+      const rg = ctx.createGain(); rg.gain.value = reverbMix;
+      filterNode.connect(rg); rg.connect(convolverRef.current); convolverRef.current.connect(masterGainRef.current);
     }
-
     if (chorusRate > 0) {
       chorusNodesRef.current.forEach(({ delay, lfoGain }) => {
         lfoGain.gain.value = chorusRate * 0.003;
-        filterNode.connect(delay);
-        delay.connect(masterGainRef.current!);
+        filterNode.connect(delay); delay.connect(masterGainRef.current!);
       });
     }
 
-    osc1.start();
-    osc2.start();
-
-    // Store oscillators for later cleanup
+    osc1.start(); osc2.start();
     activeNotesRef.current.set(midiNote, { oscs: [osc1, osc2], gainNode });
+    setPressedNotes(prev => prev.includes(midiNote) ? prev : [...prev, midiNote]);
     setIsPlaying(true);
-  }, [initAudio, waveform, attack, decay, sustain, release, volume, detune, filterCutoff, reverbMix, delayTime, delayMix, distortion, chorusRate]);
-
-  // Track cleanup timeouts for proper cleanup
-  const cleanupTimeoutsRef = useRef<Map<number, number>>(new Map());
+  }, [initAudio, waveform, attack, decay, sustain, volume, detune, filterCutoff, reverbMix, delayTime, delayMix, distortion, chorusRate]);
 
   const stopNote = useCallback((midiNote: number) => {
     const ctx = audioContextRef.current;
-    if (ctx && activeNotesRef.current.has(midiNote)) {
-      // Clear any existing timeout for this note
-      const existingTimeout = cleanupTimeoutsRef.current.get(midiNote);
-      if (existingTimeout) {
-        clearTimeout(existingTimeout);
-      }
-
-      const note = activeNotesRef.current.get(midiNote)!;
-      // Apply release envelope
-      note.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
-      // Clean up after release
-      const timeoutId = window.setTimeout(() => {
-        try {
-          note.oscs.forEach(osc => osc.stop());
-          note.oscs.forEach(osc => osc.disconnect());
-          note.gainNode.disconnect();
-        } catch (e) { }
-        activeNotesRef.current.delete(midiNote);
-        cleanupTimeoutsRef.current.delete(midiNote);
-      }, release * 1000 + 50);
-      cleanupTimeoutsRef.current.set(midiNote, timeoutId);
-    }
+    if (!ctx || !activeNotesRef.current.has(midiNote)) return;
+    const ex = cleanupTimeoutsRef.current.get(midiNote);
+    if (ex) clearTimeout(ex);
+    const note = activeNotesRef.current.get(midiNote)!;
+    note.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
+    const id = window.setTimeout(() => {
+      try { note.oscs.forEach(o => o.stop()); note.oscs.forEach(o => o.disconnect()); note.gainNode.disconnect(); } catch (_) {}
+      activeNotesRef.current.delete(midiNote);
+      cleanupTimeoutsRef.current.delete(midiNote);
+      setPressedNotes(prev => prev.filter(n => n !== midiNote));
+    }, release * 1000 + 50);
+    cleanupTimeoutsRef.current.set(midiNote, id);
   }, [release]);
 
-  // Handle key press with SEQUENTIAL LESSON SYSTEM
-  const handleKeyPress = useCallback((note: number) => {
-    if (sequenceMode && showGuideNote) {
-      // Sequential mode - check if it's the correct next note
-      const expectedNote = targetNotes[currentStep];
-      if (note === expectedNote) {
-        // Correct note!
-        setHighlightedNotes(prev => [...prev, note]);
-        setCurrentStep(prev => {
-          const nextStep = prev + 1;
-          if (nextStep >= targetNotes.length) {
-            // Lesson complete!
-            setProgress(p => Math.min(p + 10, 100));
-            setSequenceMode(false);
-            setHighlightedNotes([]);
-            return 0;
-          }
-          return nextStep;
-        });
-      }
-    } else if (targetNotes.includes(note)) {
-      // Free mode - just mark as highlighted
-      setHighlightedNotes(prev => {
-        if (!prev.includes(note)) {
-          const newHighlighted = [...prev, note];
-          if (newHighlighted.length === targetNotes.length) {
-            setProgress(p => Math.min(p + 10, 100));
-          }
-          return newHighlighted;
-        }
-        return prev;
-      });
-    }
-  }, [targetNotes, currentStep, sequenceMode, showGuideNote]);
-
-  // Play guide note (demo the note user should play)
   const playGuideNote = useCallback((note: number) => {
     playNote(note, 0.6);
-  }, [playNote]);
+    setTimeout(() => stopNote(note), 800);
+  }, [playNote, stopNote]);
 
-  // MIDI input with TRUE POLYPHONY support
+  // ── Demo playback ─────────────────────────────────────────────────────────
+  const playNoteRef = useRef(playNote); playNoteRef.current = playNote;
+  const stopNoteRef = useRef(stopNote); stopNoteRef.current = stopNote;
+
+  const stopDemo = useCallback(() => {
+    demoTimeoutsRef.current.forEach(clearTimeout);
+    demoTimeoutsRef.current = [];
+    setIsDemoPlaying(false);
+    setDemoStep(-1);
+    [...activeNotesRef.current.keys()].forEach(n => stopNoteRef.current(n));
+  }, []);
+
+  const playDemoMelody = useCallback(() => {
+    if (isDemoPlaying) { stopDemo(); return; }
+    const beatMs = (60 / bpm) * 1000;
+    const noteOn = Math.min(beatMs * 0.85, 700);
+    const timeouts: number[] = [];
+    setIsDemoPlaying(true);
+    targetNotes.forEach((note, i) => {
+      timeouts.push(window.setTimeout(() => { setDemoStep(i); playNoteRef.current(note, 0.75); }, i * beatMs));
+      timeouts.push(window.setTimeout(() => { stopNoteRef.current(note); }, i * beatMs + noteOn));
+    });
+    timeouts.push(window.setTimeout(() => { setIsDemoPlaying(false); setDemoStep(-1); }, targetNotes.length * beatMs + 300));
+    demoTimeoutsRef.current = timeouts;
+  }, [isDemoPlaying, targetNotes, bpm, stopDemo]);
+
+  // ── Key press ─────────────────────────────────────────────────────────────
+  const handleKeyPress = useCallback((note: number) => {
+    if (!sequenceMode || isDemoPlaying) return;
+    const expected = targetNotes[currentStep];
+    if (note === expected) {
+      const newCorrect = correctCount + 1;
+      setCorrectCount(newCorrect);
+      setStreak(s => s + 1);
+      setHighlightedNotes(prev => [...prev, note]);
+      const nextStep = currentStep + 1;
+      if (nextStep >= targetNotes.length) {
+        const accuracy = Math.round((newCorrect / (newCorrect + wrongCount)) * 100);
+        setLessonScores(prev => ({ ...prev, [currentLesson]: { accuracy, completed: true } }));
+        setLessonComplete({ accuracy });
+        setCurrentStep(0);
+      } else {
+        setCurrentStep(nextStep);
+      }
+    } else {
+      setWrongCount(w => w + 1);
+      setStreak(0);
+      setWrongNoteFlash(note);
+      setTimeout(() => setWrongNoteFlash(null), 400);
+    }
+  }, [targetNotes, currentStep, sequenceMode, isDemoPlaying, correctCount, wrongCount, currentLesson]);
+
+  // ── MIDI (stable ref registration) ───────────────────────────────────────
+  const handleKeyPressRef = useRef(handleKeyPress);
+  handleKeyPressRef.current = handleKeyPress;
+
   useEffect(() => {
-    const handleMidiMessage = (event: MIDIMessageEvent) => {
+    const onMidi = (event: MIDIMessageEvent) => {
       const data = event.data;
-      if (data && data.length >= 3) {
-        const [status, note, velocity] = data;
-
-        // Note On (144-159) with velocity > 0
-        if (status >= 144 && status <= 159 && velocity > 0) {
-          // Debounce: ignore NoteOn if same note fired less than 30ms ago
-          const now = performance.now();
-          const lastTrigger = midiDebounceRef.current.get(note);
-          if (lastTrigger && now - lastTrigger < 30) {
-            return; // Ignore duplicate NoteOn
-          }
-          midiDebounceRef.current.set(note, now);
-
-          playNote(note, velocity / 127);
-          handleKeyPress(note);
-        }
-        // Note Off (128-143) or Note On with velocity 0
-        else if (status >= 128 && status <= 143 || (status >= 144 && status <= 159 && velocity === 0)) {
-          stopNote(note);
-        }
+      if (!data || data.length < 3) return;
+      const [status, note, velocity] = data;
+      if (status >= 144 && status <= 159 && velocity > 0) {
+        const now = performance.now();
+        const last = midiDebounceRef.current.get(note);
+        if (last && now - last < 30) return;
+        midiDebounceRef.current.set(note, now);
+        playNoteRef.current(note, velocity / 127);
+        handleKeyPressRef.current(note);
+      } else if ((status >= 128 && status <= 143) || (status >= 144 && status <= 159 && velocity === 0)) {
+        stopNoteRef.current(note);
       }
     };
-
     let midiAccess: MIDIAccess | null = null;
-
     if (navigator.requestMIDIAccess) {
-      navigator.requestMIDIAccess().then(access => {
-        midiAccess = access;
-        access.inputs.forEach(input => {
-          input.onmidimessage = handleMidiMessage;
-        });
-      }).catch(() => { });
+      navigator.requestMIDIAccess()
+        .then(a => { midiAccess = a; a.inputs.forEach(i => { i.onmidimessage = onMidi; }); })
+        .catch(() => {});
     }
+    return () => { if (midiAccess) midiAccess.inputs.forEach(i => { i.onmidimessage = null; }); };
+  }, []);
 
-    return () => {
-      if (midiAccess) {
-        midiAccess.inputs.forEach(input => {
-          input.onmidimessage = null;
-        });
-      }
-    };
-  }, [playNote, handleKeyPress]);
+  // ── Lesson loading ────────────────────────────────────────────────────────
+  const resetScore = () => {
+    setCorrectCount(0); setWrongCount(0); setStreak(0); setLessonComplete(null);
+  };
 
-  // Load lesson
+  const applyGenrePreset = (genre: 'darkwave' | 'synthwave' | 'darkphonk') => {
+    const p = genrePresets[genre];
+    setWaveform(p.waveform);
+    setAttack(p.attack);
+    setDecay(p.decay);
+    setSustain(p.sustain);
+    setRelease(p.release);
+    setFilterCutoff(p.filterCutoff);
+    setReverbMix(p.reverbMix);
+    setDelayTime(p.delayTime);
+    setDelayMix(p.delayMix);
+    setDistortion(p.distortion);
+    setChorusRate(p.chorusRate);
+  };
+
   useEffect(() => {
-    if (lessons[currentLesson]) {
-      setTargetNotes(lessons[currentLesson].pattern);
-      setHighlightedNotes([]);
-      setCurrentStep(0);
-      setSequenceMode(true);
-      setBpm(lessons[currentLesson].bpm);
-    }
-  }, [currentLesson]);
-
-  const selectLesson = (index: number) => {
-    setCurrentLesson(index);
+    const lesson = lessons[currentLesson];
+    if (!lesson) return;
+    stopDemo();
+    setTargetNotes(lesson.pattern);
     setHighlightedNotes([]);
     setCurrentStep(0);
     setSequenceMode(true);
+    setBpm(lesson.bpm);
+    resetScore();
+    applyGenrePreset(lesson.genre);
+  }, [currentLesson]);
+
+  const selectLesson = (index: number) => {
+    if (index === currentLesson) return;
+    setCurrentLesson(index);
   };
 
-  const getCurrentGuideNote = () => {
-    if (sequenceMode && targetNotes.length > 0 && currentStep < targetNotes.length) {
-      return targetNotes[currentStep];
-    }
-    return null;
-  };
+  // Guide note
+  const beatMs = (60 / bpm) * 1000;
+  const guideNote = isDemoPlaying
+    ? (demoStep >= 0 ? targetNotes[demoStep] ?? null : null)
+    : sequenceMode && !lessonComplete
+      ? targetNotes[currentStep] ?? null
+      : null;
 
+  const completedCount = Object.values(lessonScores).filter(s => s.completed).length;
+  const currentLessonData = lessons[currentLesson];
+  const currentGenreStyle = currentLessonData ? GENRE_STYLE[currentLessonData.genre] : null;
+  const currentPresetLabel = currentLessonData ? genrePresets[currentLessonData.genre].label : '';
+
+  // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-gradient-to-b from-black via-gray-900 to-black text-white">
-      {/* Neon grid background */}
-      <div className="fixed inset-0 opacity-10 pointer-events-none">
-        <div className="absolute inset-0" style={{
-          backgroundImage: `
-            linear-gradient(rgba(138, 43, 226, 0.3) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(138, 43, 226, 0.3) 1px, transparent 1px)
-          `,
-          backgroundSize: '50px 50px'
-        }} />
-      </div>
-
-      <div className="relative z-10 container mx-auto px-4 py-6">
-        {/* Header */}
-        <header className="text-center mb-8">
-          <h1 className="text-5xl font-bold mb-2 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 bg-clip-text text-transparent drop-shadow-lg">
+    <div
+      className="h-screen flex flex-col overflow-hidden bg-black text-white"
+      style={{
+        backgroundImage: 'linear-gradient(rgba(138,43,226,.06) 1px,transparent 1px),linear-gradient(90deg,rgba(138,43,226,.06) 1px,transparent 1px)',
+        backgroundSize: '48px 48px',
+      }}
+    >
+      {/* ── HEADER ── */}
+      <header className="flex-shrink-0 flex items-center justify-between px-4 py-2 border-b border-purple-900/50 bg-black/80 backdrop-blur-sm gap-4">
+        {/* Left: title */}
+        <div className="flex-shrink-0">
+          <h1 className="text-lg font-bold bg-gradient-to-r from-pink-500 via-purple-400 to-cyan-400 bg-clip-text text-transparent leading-tight">
             SYNTHWAVE PIANO
           </h1>
-          <p className="text-gray-400 text-lg">Darkwave • Synthwave • Dark Phonk</p>
-          <div className="flex justify-center gap-4 mt-4">
-            <span className="px-3 py-1 bg-pink-500/20 border border-pink-500/50 rounded-full text-sm text-pink-400">
-              🎹 TRUE POLYPHONY
+          <p className="text-[9px] text-gray-700 tracking-widest">DARKWAVE · SYNTHWAVE · DARK PHONK</p>
+        </div>
+
+        {/* Center: preset badge + progress */}
+        <div className="flex items-center gap-3 flex-1 min-w-0">
+          {currentGenreStyle && (
+            <span className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-full font-bold flex-shrink-0 ${currentGenreStyle.pill}`}>
+              <span>{genreIcons[currentLessonData!.genre]}</span>
+              <span>{currentPresetLabel}</span>
             </span>
-            <span className="px-3 py-1 bg-cyan-500/20 border border-cyan-500/50 rounded-full text-sm text-cyan-400">
-              {sequenceMode ? '🎯 SEQUENCE MODE' : '🎸 FREE MODE'}
+          )}
+          {isDemoPlaying && (
+            <span className="text-[10px] px-2 py-1 rounded-full bg-yellow-500/20 border border-yellow-500/30 text-yellow-400 animate-pulse flex-shrink-0">
+              ▶ Demo
             </span>
-            <span className="px-3 py-1 bg-purple-500/20 border border-purple-500/50 rounded-full text-sm text-purple-400">
-              {bpm} BPM
-            </span>
+          )}
+          <div className="flex items-center gap-2 ml-auto flex-shrink-0">
+            <div className="w-20 h-1 bg-gray-900 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-pink-500 to-cyan-500 transition-all"
+                style={{ width: `${(completedCount / lessons.length) * 100}%` }}
+              />
+            </div>
+            <span className="text-[9px] text-gray-600 tabular-nums">{completedCount}/{lessons.length}</span>
           </div>
-        </header>
-
-        {/* Sequential Lesson Player */}
-        {sequenceMode && (
-          <SequencePlayer
-            targetNotes={targetNotes}
-            currentStep={currentStep}
-            onPlayGuide={playGuideNote}
-            lessonName={lessons[currentLesson]?.name || ''}
-          />
-        )}
-
-        {/* Waveform Display */}
-        <WaveformDisplay isPlaying={isPlaying} />
-
-        {/* Synth Controls */}
-        <SynthControls
-          waveform={waveform}
-          setWaveform={setWaveform}
-          attack={attack}
-          setAttack={setAttack}
-          decay={decay}
-          setDecay={setDecay}
-          sustain={sustain}
-          setSustain={setSustain}
-          release={release}
-          setRelease={setRelease}
-          volume={volume}
-          setVolume={setVolume}
-          detune={detune}
-          setDetune={setDetune}
-          filterCutoff={filterCutoff}
-          setFilterCutoff={setFilterCutoff}
-        />
-
-        {/* Effects */}
-        <EffectsPanel
-          reverbMix={reverbMix}
-          setReverbMix={setReverbMix}
-          delayTime={delayTime}
-          setDelayTime={setDelayTime}
-          delayMix={delayMix}
-          setDelayMix={setDelayMix}
-          distortion={distortion}
-          setDistortion={setDistortion}
-          filterCutoff={filterCutoff}
-          setFilterCutoff={setFilterCutoff}
-          chorusRate={chorusRate}
-          setChorusRate={setChorusRate}
-        />
-
-        {/* Piano Keyboard with guide note highlighting */}
-        <div className="mb-6">
-          <PianoKeyboard
-            highlightedNotes={highlightedNotes}
-            targetNotes={targetNotes}
-            guideNote={sequenceMode ? getCurrentGuideNote() : null}
-            onKeyPress={(note) => {
-              playNote(note, 0.8);
-              handleKeyPress(note);
-            }}
-            onKeyRelease={stopNote}
-          />
         </div>
 
-        {/* Metronome */}
-        <Metronome bpm={bpm} setBpm={setBpm} />
-
-        {/* Mode Toggle */}
-        <div className="flex justify-center mb-6">
-          <button
-            onClick={() => setSequenceMode(!sequenceMode)}
-            className={`px-6 py-3 rounded-full font-bold transition-all ${sequenceMode
-              ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
-              : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
-              }`}
-          >
-            {sequenceMode ? '🎯 Modo Secuencia Activo' : '🎸 Modo Libre'}
-          </button>
+        {/* Right: mini waveform */}
+        <div className="flex-shrink-0 flex items-center gap-2">
+          <div className="flex flex-col items-end gap-0.5">
+            <span className={`text-[8px] font-bold ${isPlaying ? 'text-pink-500' : 'text-gray-700'} tracking-widest`}>
+              {isPlaying ? '● LIVE' : '○ IDLE'}
+            </span>
+            <WaveformDisplay isPlaying={isPlaying} compact />
+          </div>
         </div>
+      </header>
 
-        {/* Lesson Grid */}
-        <LessonGrid
-          lessons={lessons}
-          currentLesson={currentLesson}
-          onSelectLesson={selectLesson}
-          progress={progress}
-        />
+      {/* ── MAIN ROW ── */}
+      <div className="flex flex-1 overflow-hidden">
 
-        {/* Progress */}
-        <div className="mt-6 bg-gray-900/50 rounded-full p-1">
-          <div
-            className="h-3 bg-gradient-to-r from-pink-500 via-purple-500 to-cyan-500 rounded-full transition-all"
-            style={{ width: `${progress}%` }}
-          />
-        </div>
-        <p className="text-center text-gray-500 mt-2">Progreso: {progress}%</p>
-
-        {/* Instructions */}
-        {sequenceMode && (
-          <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-purple-500/30 text-center">
-            <p className="text-purple-300">
-              🎯 <strong>Modo Secuencia:</strong> Presiona las teclas en orden. La tecla verde es la siguiente nota que debes tocar.
-            </p>
+        {/* ── LEFT SIDEBAR ── */}
+        <aside className="w-52 flex-shrink-0 flex flex-col border-r border-purple-900/30 bg-gray-950/90 overflow-hidden">
+          <div className="px-3 py-2 border-b border-gray-900 flex-shrink-0 flex items-center justify-between">
+            <p className="text-[9px] font-bold text-purple-600 tracking-widest">LECCIONES</p>
+            <span className="text-[9px] text-gray-700">{lessons.length} tracks</span>
+          </div>
+          <div className="flex-1 overflow-y-auto">
+            {lessons.map((lesson, i) => (
+              <SidebarLesson
+                key={lesson.id}
+                lesson={lesson}
+                isActive={currentLesson === i}
+                score={lessonScores[i]}
+                onClick={() => selectLesson(i)}
+              />
+            ))}
+          </div>
+          {/* Mode toggle */}
+          <div className="flex-shrink-0 p-2 border-t border-gray-900 flex gap-1">
             <button
-              onClick={() => playGuideNote(targetNotes[currentStep])}
-              className="mt-2 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition"
-            >
-              🔊 Escuchar nota guía
-            </button>
+              onClick={() => setSequenceMode(true)}
+              className={`flex-1 py-1.5 rounded text-[10px] font-bold transition-all ${sequenceMode ? 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30' : 'bg-gray-900 text-gray-600 hover:bg-gray-800'}`}
+            >🎯 Guiado</button>
+            <button
+              onClick={() => { setSequenceMode(false); stopDemo(); }}
+              className={`flex-1 py-1.5 rounded text-[10px] font-bold transition-all ${!sequenceMode ? 'bg-pink-500/20 text-pink-400 border border-pink-500/30' : 'bg-gray-900 text-gray-600 hover:bg-gray-800'}`}
+            >🎸 Libre</button>
           </div>
-        )}
+        </aside>
+
+        {/* ── CENTER CONTENT + KEYBOARD ── */}
+        <div className="flex-1 flex flex-col overflow-hidden">
+
+          {/* Scrollable center */}
+          <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+
+            {/* Lesson complete banner */}
+            {lessonComplete && (
+              <div className="p-3 bg-gradient-to-r from-green-900/40 to-cyan-900/40 rounded-xl border border-green-500/30 text-center">
+                <p className="text-xl font-bold text-green-400">🎉 ¡COMPLETADO!</p>
+                <p className="text-gray-400 text-xs mt-1">
+                  Precisión:{' '}
+                  <span className={`font-bold ${lessonComplete.accuracy >= 80 ? 'text-green-400' : lessonComplete.accuracy >= 60 ? 'text-yellow-400' : 'text-orange-400'}`}>
+                    {lessonComplete.accuracy}%
+                  </span>
+                </p>
+                <div className="flex justify-center gap-2 mt-2">
+                  <button
+                    onClick={() => { setHighlightedNotes([]); setCurrentStep(0); resetScore(); }}
+                    className="px-3 py-1 bg-gray-800/60 text-gray-300 rounded-lg text-xs hover:bg-gray-800 transition"
+                  >🔄 Repetir</button>
+                  {currentLesson < lessons.length - 1 && (
+                    <button
+                      onClick={() => selectLesson(currentLesson + 1)}
+                      className="px-3 py-1 bg-gradient-to-r from-pink-500 to-purple-500 text-white rounded-lg text-xs hover:opacity-90 transition"
+                    >➡ Siguiente</button>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Sequence player */}
+            {sequenceMode && !lessonComplete && (
+              <SequencePlayer
+                targetNotes={targetNotes}
+                currentStep={currentStep}
+                lessonName={lessons[currentLesson]?.name ?? ''}
+                lessonTip={lessons[currentLesson]?.tip ?? ''}
+                correctCount={correctCount}
+                wrongCount={wrongCount}
+                streak={streak}
+                isDemoPlaying={isDemoPlaying}
+                demoStep={demoStep}
+                onPlayGuide={playGuideNote}
+                onPlayDemo={playDemoMelody}
+              />
+            )}
+
+            {/* Piano roll — expanded */}
+            {targetNotes.length > 0 && (
+              <div style={{ height: 110 }}>
+                <PianoRoll
+                  notes={targetNotes}
+                  currentStep={currentStep}
+                  demoStep={demoStep}
+                  isDemoPlaying={isDemoPlaying}
+                  onNotePreview={playGuideNote}
+                />
+              </div>
+            )}
+
+            {/* Synth + FX knob panels side by side */}
+            <div className="grid grid-cols-2 gap-2">
+              <SynthControls
+                waveform={waveform} setWaveform={setWaveform}
+                attack={attack} setAttack={setAttack}
+                decay={decay} setDecay={setDecay}
+                sustain={sustain} setSustain={setSustain}
+                release={release} setRelease={setRelease}
+                volume={volume} setVolume={setVolume}
+                detune={detune} setDetune={setDetune}
+              />
+              <EffectsPanel
+                reverbMix={reverbMix} setReverbMix={setReverbMix}
+                delayTime={delayTime} setDelayTime={setDelayTime}
+                delayMix={delayMix} setDelayMix={setDelayMix}
+                distortion={distortion} setDistortion={setDistortion}
+                filterCutoff={filterCutoff} setFilterCutoff={setFilterCutoff}
+                chorusRate={chorusRate} setChorusRate={setChorusRate}
+              />
+            </div>
+
+          </div>
+
+          {/* ── FIXED KEYBOARD STRIP ── */}
+          <div className="flex-shrink-0 border-t border-purple-900/30 bg-black/80 backdrop-blur-sm px-3 pt-2 pb-2">
+            <BpmControl bpm={bpm} setBpm={setBpm} />
+            <div className="mt-2">
+              <PianoKeyboard
+                guideNote={guideNote}
+                highlightedNotes={highlightedNotes}
+                activeNotes={pressedNotes}
+                wrongNotes={wrongNoteFlash !== null ? [wrongNoteFlash] : []}
+                beatMs={beatMs}
+                onKeyPress={note => { playNote(note, 0.8); handleKeyPress(note); }}
+                onKeyRelease={stopNote}
+              />
+            </div>
+          </div>
+
+        </div>
       </div>
     </div>
   );

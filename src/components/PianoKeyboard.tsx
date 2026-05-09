@@ -1,195 +1,147 @@
-import { useState } from 'react';
-
 interface PianoKeyboardProps {
-  highlightedNotes: number[];
-  targetNotes: number[];
   guideNote: number | null;
+  highlightedNotes: number[];
+  activeNotes: number[];
+  wrongNotes: number[];
+  beatMs: number;            // milliseconds per beat — drives guide pulse speed
   onKeyPress: (note: number) => void;
   onKeyRelease: (note: number) => void;
 }
 
+const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+
 const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
+  guideNote,
   highlightedNotes,
-  targetNotes,
+  activeNotes,
+  wrongNotes,
+  beatMs,
   onKeyPress,
   onKeyRelease,
 }) => {
-  const [activeNotes, setActiveNotes] = useState<Set<number>>(new Set());
-  const startNote = 48; // C3
-  const octaves = 2;
+  const START_NOTE = 48; // C3
+  const OCTAVES = 3;     // C3–B5
 
-  const isBlackKey = (note: number): boolean => {
-    const n = note % 12;
-    return [1, 3, 6, 8, 10].includes(n);
-  };
-
-  const getNoteName = (note: number): string => {
-    const names = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
-    return names[note % 12];
-  };
-
-  const isHighlighted = (note: number): boolean => highlightedNotes.includes(note);
-  const isTarget = (note: number): boolean => targetNotes.includes(note);
-  const isActive = (note: number): boolean => activeNotes.has(note);
+  const isBlackKey = (note: number) => [1, 3, 6, 8, 10].includes(note % 12);
 
   const getKeyStyle = (note: number): React.CSSProperties => {
-    const isBlack = isBlackKey(note);
-    const highlighted = isHighlighted(note);
-    const target = isTarget(note);
-    const active = isActive(note);
+    const black = isBlackKey(note);
 
-    if (active) {
-      return {
-        background: highlighted
-          ? 'linear-gradient(180deg, #10b981 0%, #059669 100%)'
-          : 'linear-gradient(180deg, #ec4899 0%, #db2777 100%)',
-        boxShadow: highlighted
-          ? '0 0 30px #10b981, 0 0 60px #10b981'
-          : '0 0 30px #ec4899, 0 0 60px #ec4899',
-      };
-    }
-
-    if (highlighted) {
-      return {
-        background: 'linear-gradient(180deg, #10b981 0%, #059669 100%)',
-        boxShadow: '0 0 20px #10b981',
-      };
-    }
-
-    if (target) {
-      return {
-        background: 'linear-gradient(180deg, #facc15 0%, #eab308 100%)',
-        boxShadow: '0 0 20px #facc15, inset 0 -2px 10px rgba(0,0,0,0.3)',
-        animation: 'pulse 1s ease-in-out infinite',
-      };
-    }
-
+    if (wrongNotes.includes(note)) return {
+      background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)',
+      boxShadow: '0 0 28px #ef4444, 0 0 56px #ef4444',
+    };
+    if (activeNotes.includes(note)) return {
+      background: highlightedNotes.includes(note)
+        ? 'linear-gradient(180deg, #10b981 0%, #059669 100%)'
+        : 'linear-gradient(180deg, #ec4899 0%, #db2777 100%)',
+      boxShadow: highlightedNotes.includes(note)
+        ? '0 0 28px #10b981'
+        : '0 0 28px #ec4899',
+    };
+    if (highlightedNotes.includes(note)) return {
+      background: 'linear-gradient(180deg, #10b981 0%, #059669 100%)',
+      boxShadow: '0 0 18px #10b981',
+    };
+    if (note === guideNote) return {
+      background: 'linear-gradient(180deg, #22d3ee 0%, #0891b2 100%)',
+      boxShadow: '0 0 22px #22d3ee, 0 0 44px #22d3ee',
+      animationName: 'guidePulse',
+      animationDuration: `${beatMs / 1000}s`,
+      animationTimingFunction: 'ease-in-out',
+      animationIterationCount: 'infinite',
+    };
     return {
-      background: isBlack
+      background: black
         ? 'linear-gradient(180deg, #1f2937 0%, #111827 100%)'
         : 'linear-gradient(180deg, #f9fafb 0%, #e5e7eb 100%)',
     };
   };
 
-  const handleMouseDown = (note: number) => {
-    setActiveNotes(prev => new Set([...prev, note]));
-    onKeyPress(note);
-  };
+  const showLabel = (note: number) =>
+    note === guideNote || highlightedNotes.includes(note) ||
+    activeNotes.includes(note) || wrongNotes.includes(note);
 
-  const handleMouseUp = (note: number) => {
-    setActiveNotes(prev => {
-      const next = new Set(prev);
-      next.delete(note);
-      return next;
-    });
-    onKeyRelease(note);
-  };
+  const BLACK_KEY_POS: Record<number, number> = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
 
-  const renderOctave = (octaveIndex: number) => {
+  const renderOctave = (octaveOffset: number) => {
     const whiteKeys: JSX.Element[] = [];
-    const blackKeys: { note: number; element: JSX.Element }[] = [];
+    const blackDefs: { note: number; pos: number }[] = [];
 
     for (let i = 0; i < 12; i++) {
-      const note = startNote + (octaveIndex * 12) + i;
-      const isBlack = isBlackKey(note);
+      const note = START_NOTE + octaveOffset * 12 + i;
+      const black = isBlackKey(note);
 
-      const keyElement = (
-        <button
-          key={note}
-          className={`relative transition-all duration-100 rounded-b-lg flex items-end justify-center pb-2 ${isBlack
-            ? 'w-8 h-24 -mt-20 z-20 mx-[-16px]'
-            : 'w-12 h-36'
-            }`}
-          style={getKeyStyle(note)}
-          onMouseDown={() => handleMouseDown(note)}
-          onMouseUp={() => handleMouseUp(note)}
-          onMouseLeave={() => {
-            if (activeNotes.has(note)) {
-              handleMouseUp(note);
-            }
-          }}
-          onTouchStart={(e) => {
-            e.preventDefault();
-            handleMouseDown(note);
-          }}
-          onTouchEnd={() => handleMouseUp(note)}
-        >
-          <span className={`text-xs font-bold ${isBlack ? 'text-gray-400' : 'text-gray-600'}`}>
-            {isTarget(note) || isHighlighted(note) || isActive(note) ? getNoteName(note) : ''}
-          </span>
-        </button>
-      );
-
-      if (isBlack) {
-        blackKeys.push({ note, element: keyElement });
+      if (black) {
+        blackDefs.push({ note, pos: BLACK_KEY_POS[i] ?? 0 });
       } else {
-        whiteKeys.push(keyElement);
+        whiteKeys.push(
+          <button
+            key={note}
+            className="relative transition-all duration-75 rounded-b-lg flex items-end justify-center pb-2 w-12 h-36"
+            style={getKeyStyle(note)}
+            onMouseDown={() => onKeyPress(note)}
+            onMouseUp={() => onKeyRelease(note)}
+            onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
+            onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
+            onTouchEnd={() => onKeyRelease(note)}
+          >
+            {showLabel(note) && (
+              <span className="text-xs font-bold text-gray-700">{NOTE_NAMES[note % 12]}</span>
+            )}
+          </button>
+        );
       }
     }
 
-    // Calculate black key positions based on which white keys they follow
-    const getBlackKeyPosition = (noteIndex: number): number => {
-      // Black keys are positioned after specific white keys
-      // C# is after C (index 0), D# after D (index 2), etc.
-      const positions: { [key: number]: number } = {
-        1: 0,  // C# after C
-        3: 1,  // D# after D
-        6: 3,  // F# after F
-        8: 4,  // G# after G
-        10: 5, // A# after A
-      };
-      return positions[noteIndex % 12] ?? 0;
-    };
-
     return (
-      <div key={octaveIndex} className="flex relative">
+      <div key={octaveOffset} className="flex relative">
         <div className="flex">{whiteKeys}</div>
         <div className="absolute inset-0 flex pointer-events-none">
-          {blackKeys.map(({ note, element }) => {
-            const noteIndex = note % 12;
-            const position = getBlackKeyPosition(noteIndex);
-            return (
-              <div
-                key={note}
-                className="absolute pointer-events-auto"
-                style={{ left: `${(position + 1) * 48 - 16}px` }}
+          {blackDefs.map(({ note, pos }) => (
+            <div
+              key={note}
+              className="absolute pointer-events-auto"
+              style={{ left: `${(pos + 1) * 48 - 16}px` }}
+            >
+              <button
+                className="relative transition-all duration-75 rounded-b-lg flex items-end justify-center pb-1 w-8 h-24 -mt-20 z-20 mx-[-16px]"
+                style={getKeyStyle(note)}
+                onMouseDown={() => onKeyPress(note)}
+                onMouseUp={() => onKeyRelease(note)}
+                onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
+                onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
+                onTouchEnd={() => onKeyRelease(note)}
               >
-                {element}
-              </div>
-            );
-          })}
+                {showLabel(note) && (
+                  <span className="text-[10px] font-bold text-white">{NOTE_NAMES[note % 12]}</span>
+                )}
+              </button>
+            </div>
+          ))}
         </div>
       </div>
     );
   };
 
   return (
-    <div className="bg-gradient-to-r from-purple-900/50 via-pink-900/50 to-cyan-900/50 rounded-2xl p-6 border border-purple-500/30 backdrop-blur-sm">
-      <div className="flex gap-1 min-w-fit overflow-x-auto pb-4">
-        {Array.from({ length: octaves }, (_, i) => renderOctave(i))}
+    <div className="bg-black/50 rounded-2xl px-4 pt-3 pb-2 border border-purple-500/20 backdrop-blur-sm">
+      <div className="flex gap-1 min-w-fit overflow-x-auto pb-2 select-none">
+        {Array.from({ length: OCTAVES }, (_, i) => renderOctave(i))}
       </div>
 
       {/* Legend */}
-      <div className="flex justify-center gap-6 mt-4 text-sm">
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 bg-yellow-400 rounded shadow-lg shadow-yellow-400/50"></span>
-          <span className="text-gray-400">Objetivo</span>
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 bg-pink-500 rounded shadow-lg shadow-pink-500/50"></span>
-          <span className="text-gray-400">Tocando</span>
-        </span>
-        <span className="flex items-center gap-2">
-          <span className="w-4 h-4 bg-green-500 rounded shadow-lg shadow-green-500/50"></span>
-          <span className="text-gray-400">Completado</span>
-        </span>
+      <div className="flex justify-center gap-4 mt-1 text-[10px] text-gray-600">
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-cyan-400 inline-block" /> Siguiente</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-pink-500 inline-block" /> Tocando</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-green-500 inline-block" /> Correcta</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-3 rounded bg-red-500 inline-block" /> Error</span>
       </div>
 
-      {/* CSS Animation */}
       <style>{`
-        @keyframes pulse {
-          0%, 100% { box-shadow: 0 0 20px #facc15; }
-          50% { box-shadow: 0 0 40px #facc15, 0 0 60px #facc15; }
+        @keyframes guidePulse {
+          0%, 100% { box-shadow: 0 0 18px #22d3ee; }
+          50%       { box-shadow: 0 0 42px #22d3ee, 0 0 68px #22d3ee; }
         }
       `}</style>
     </div>
