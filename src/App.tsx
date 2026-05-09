@@ -4,6 +4,7 @@ import SynthControls from './components/SynthControls';
 import EffectsPanel from './components/EffectsPanel';
 import SequencePlayer from './components/SequencePlayer';
 import PianoRoll from './components/PianoRoll';
+import SheetMusic from './components/SheetMusic';
 import WaveformDisplay from './components/WaveformDisplay';
 import { lessons, genreIcons, genrePresets } from './data/synthLessons';
 
@@ -533,9 +534,19 @@ function App() {
               />
             )}
 
-            {/* Piano roll — expanded */}
+            {/* Sheet music notation */}
             {targetNotes.length > 0 && (
-              <div style={{ height: 110 }}>
+              <SheetMusic
+                notes={targetNotes}
+                currentStep={currentStep}
+                demoStep={demoStep}
+                isDemoPlaying={isDemoPlaying}
+              />
+            )}
+
+            {/* Piano roll */}
+            {targetNotes.length > 0 && (
+              <div style={{ height: 88 }}>
                 <PianoRoll
                   notes={targetNotes}
                   currentStep={currentStep}
