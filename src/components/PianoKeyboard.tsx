@@ -3,6 +3,7 @@ import { useCallback, useRef, useState, useEffect } from 'react';
 interface PianoKeyboardProps {
   highlightedNotes: number[];
   targetNotes: number[];
+  guideNote: number | null;
   onKeyPress: (note: number) => void;
   onKeyRelease: (note: number) => void;
 }
@@ -10,6 +11,7 @@ interface PianoKeyboardProps {
 const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
   highlightedNotes,
   targetNotes,
+  guideNote,
   onKeyPress,
   onKeyRelease,
 }) => {
@@ -87,7 +89,7 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
   const renderOctave = (octaveIndex: number) => {
     const notes = [];
     const whiteKeys: JSX.Element[] = [];
-    const blackKeys: JSX.Element[] = [];
+    const blackKeys: { note: number; element: JSX.Element }[] = [];
 
     for (let i = 0; i < 12; i++) {
       const note = startNote + (octaveIndex * 12) + i;
@@ -118,16 +120,44 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
       );
 
       if (isBlack) {
-        blackKeys.push(keyElement);
+        blackKeys.push({ note, element: keyElement });
       } else {
         whiteKeys.push(keyElement);
       }
     }
 
+    // Calculate black key positions based on which white keys they follow
+    const getBlackKeyPosition = (noteIndex: number): number => {
+      // Black keys are positioned after specific white keys
+      // C# is after C (index 0), D# after D (index 2), etc.
+      const positions: { [key: number]: number } = {
+        1: 0,  // C# after C
+        3: 1,  // D# after D
+        6: 3,  // F# after F
+        8: 4,  // G# after G
+        10: 5, // A# after A
+      };
+      return positions[noteIndex % 12] ?? 0;
+    };
+
     return (
       <div key={octaveIndex} className="flex relative">
         <div className="flex">{whiteKeys}</div>
-        <div className="absolute flex">{blackKeys}</div>
+        <div className="absolute inset-0 flex">
+          {blackKeys.map(({ note, element }) => {
+            const noteIndex = note % 12;
+            const position = getBlackKeyPosition(noteIndex);
+            return (
+              <div
+                key={note}
+                className="absolute"
+                style={{ left: `${(position + 1) * 48 - 16}px` }}
+              >
+                {element}
+              </div>
+            );
+          })}
+        </div>
       </div>
     );
   };

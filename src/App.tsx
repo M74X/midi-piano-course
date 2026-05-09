@@ -5,6 +5,7 @@ import EffectsPanel from './components/EffectsPanel';
 import LessonGrid from './components/LessonGrid';
 import Metronome from './components/Metronome';
 import WaveformDisplay from './components/WaveformDisplay';
+import SequencePlayer from './components/SequencePlayer';
 import { lessons } from './data/synthLessons';
 
 function App() {
@@ -14,6 +15,9 @@ function App() {
   const [progress, setProgress] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
   const [bpm, setBpm] = useState(120);
+  const [currentStep, setCurrentStep] = useState(0);
+  const [sequenceMode, setSequenceMode] = useState(false);
+  const [showGuideNote, setShowGuideNote] = useState(true);
 
   // Synth params
   const [waveform, setWaveform] = useState<'sine' | 'square' | 'sawtooth' | 'triangle'>('sawtooth');
@@ -40,6 +44,9 @@ function App() {
   const masterGainRef = useRef<GainNode | null>(null);
   const distortionNodeRef = useRef<DynamicsCompressorNode | null>(null);
   const chorusNodesRef = useRef<{ delay: DelayNode; lfo: OscillatorNode; lfoGain: GainNode }[]>([]);
+
+  // Active notes tracking - store oscillators for proper cleanup
+  const activeNotesRef = useRef<Map<number, { oscs: OscillatorNode[]; gainNode: GainNode }>>(new Map());
 
   // Initialize audio context
   const initAudio = useCallback(() => {
@@ -104,21 +111,18 @@ function App() {
     return audioContextRef.current;
   }, []);
 
-  // Active notes tracking
-  const activeNotesRef = useRef<Map<number, { osc: OscillatorNode; gain: GainNode }>>(new Map());
-
+  // TRUE POLYPHONY - Allow multiple notes to play simultaneously
   const playNote = useCallback((midiNote: number, velocity: number = 0.8) => {
     const ctx = initAudio();
 
-    // Stop existing note
+    // Stop any existing instance of this note first
     if (activeNotesRef.current.has(midiNote)) {
       const existing = activeNotesRef.current.get(midiNote)!;
-      existing.gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.05);
-      setTimeout(() => {
-        existing.osc.disconnect();
-        existing.gain.disconnect();
-      }, 50);
-      activeNotesRef.current.delete(midiNote);
+      try {
+        existing.oscs.forEach(osc => osc.stop());
+        existing.oscs.forEach(osc => osc.disconnect());
+        existing.gainNode.disconnect();
+      } catch (e) {}
     }
 
     // Calculate frequency
@@ -131,7 +135,7 @@ function App() {
     const filterNode = ctx.createBiquadFilter();
 
     osc1.frequency.value = freq * (1 + detune / 1000);
-    osc2.frequency.value = freq * 2.02; // Slight detune for chorus effect
+    osc2.frequency.value = freq * 2.02;
     osc1.type = waveform;
     osc2.type = waveform;
 
@@ -145,14 +149,13 @@ function App() {
     gainNode.gain.setValueAtTime(0, now);
     gainNode.gain.linearRampToValueAtTime(velocity * volume, now + attack);
     gainNode.gain.exponentialRampToValueAtTime(velocity * volume * sustain, now + attack + decay);
-    gainNode.gain.setValueAtTime(velocity * volume * sustain, now + attack + decay + 0.5);
 
     // Connect
     osc1.connect(gainNode);
     osc2.connect(gainNode);
     gainNode.connect(filterNode);
 
-    // Distortion
+    // Effects routing
     if (distortion > 0 && distortionNodeRef.current) {
       filterNode.connect(distortionNodeRef.current);
       distortionNodeRef.current.connect(masterGainRef.current!);
@@ -160,7 +163,6 @@ function App() {
       filterNode.connect(masterGainRef.current!);
     }
 
-    // Delay
     if (delayMix > 0 && delayRef.current && delayFeedbackRef.current) {
       delayRef.current.delayTime.value = delayTime;
       delayFeedbackRef.current.gain.value = delayMix * 0.5;
@@ -168,7 +170,6 @@ function App() {
       delayRef.current.connect(masterGainRef.current!);
     }
 
-    // Reverb
     if (reverbMix > 0 && convolverRef.current) {
       const reverbGain = ctx.createGain();
       reverbGain.gain.value = reverbMix;
@@ -177,7 +178,6 @@ function App() {
       convolverRef.current.connect(masterGainRef.current!);
     }
 
-    // Chorus
     if (chorusRate > 0) {
       chorusNodesRef.current.forEach(({ delay, lfoGain }) => {
         lfoGain.gain.value = chorusRate * 0.003;
@@ -189,32 +189,50 @@ function App() {
     osc1.start();
     osc2.start();
 
-    activeNotesRef.current.set(midiNote, { osc: osc1, gain: gainNode });
-
-    // Auto release after 2 seconds
-    setTimeout(() => {
-      stopNote(midiNote);
-    }, 2000);
+    // Store oscillators for later cleanup
+    activeNotesRef.current.set(midiNote, { oscs: [osc1, osc2], gainNode });
+    setIsPlaying(true);
   }, [initAudio, waveform, attack, decay, sustain, release, volume, detune, filterCutoff, reverbMix, delayTime, delayMix, distortion, chorusRate]);
 
   const stopNote = useCallback((midiNote: number) => {
     const ctx = audioContextRef.current;
     if (ctx && activeNotesRef.current.has(midiNote)) {
-      const { osc, gain } = activeNotesRef.current.get(midiNote)!;
-      gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
+      const note = activeNotesRef.current.get(midiNote)!;
+      // Apply release envelope
+      note.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
+      // Clean up after release
       setTimeout(() => {
         try {
-          osc.stop();
-          osc.disconnect();
-          gain.disconnect();
+          note.oscs.forEach(osc => osc.stop());
+          note.oscs.forEach(osc => osc.disconnect());
+          note.gainNode.disconnect();
         } catch (e) {}
+        activeNotesRef.current.delete(midiNote);
       }, release * 1000 + 50);
-      activeNotesRef.current.delete(midiNote);
     }
   }, [release]);
 
+  // Handle key press with SEQUENTIAL LESSON SYSTEM
   const handleKeyPress = useCallback((note: number) => {
-    if (targetNotes.includes(note)) {
+    if (sequenceMode && showGuideNote) {
+      // Sequential mode - check if it's the correct next note
+      const expectedNote = targetNotes[currentStep];
+      if (note === expectedNote) {
+        // Correct note!
+        setHighlightedNotes(prev => [...prev, note]);
+        setCurrentStep(prev => {
+          const nextStep = prev + 1;
+          if (nextStep >= targetNotes.length) {
+            // Lesson complete!
+            setProgress(p => Math.min(p + 10, 100));
+            setSequenceMode(false);
+            return prev;
+          }
+          return nextStep;
+        });
+      }
+    } else if (targetNotes.includes(note)) {
+      // Free mode - just mark as highlighted
       setHighlightedNotes(prev => {
         if (!prev.includes(note)) {
           const newHighlighted = [...prev, note];
@@ -226,19 +244,29 @@ function App() {
         return prev;
       });
     }
-  }, [targetNotes]);
+  }, [targetNotes, currentStep, sequenceMode, showGuideNote]);
 
-  // MIDI input
+  // Play guide note (demo the note user should play)
+  const playGuideNote = useCallback((note: number) => {
+    playNote(note, 0.6);
+  }, [playNote]);
+
+  // MIDI input with TRUE POLYPHONY support
   useEffect(() => {
     const handleMidiMessage = (event: MIDIMessageEvent) => {
       const data = event.data;
       if (data && data.length >= 3) {
         const [status, note, velocity] = data;
+
+        // Note On (144-159) with velocity > 0
         if (status >= 144 && status <= 159 && velocity > 0) {
           playNote(note, velocity / 127);
           handleKeyPress(note);
-        } else if (status >= 128 && status <= 143) {
-          stopNote(note);
+        }
+        // Note Off (128-143)
+        else if (status >= 128 && status <= 143) {
+          // Don't stop immediately on note off - let the envelope handle it
+          // This allows for smoother polyphonic playback
         }
       }
     };
@@ -250,19 +278,31 @@ function App() {
         });
       }).catch(() => {});
     }
-  }, [playNote, handleKeyPress, stopNote]);
+  }, [playNote, handleKeyPress]);
 
   // Load lesson
   useEffect(() => {
     if (lessons[currentLesson]) {
       setTargetNotes(lessons[currentLesson].pattern);
       setHighlightedNotes([]);
+      setCurrentStep(0);
+      setSequenceMode(true);
+      setBpm(lessons[currentLesson].bpm);
     }
   }, [currentLesson]);
 
   const selectLesson = (index: number) => {
     setCurrentLesson(index);
     setHighlightedNotes([]);
+    setCurrentStep(0);
+    setSequenceMode(true);
+  };
+
+  const getCurrentGuideNote = () => {
+    if (sequenceMode && targetNotes.length > 0 && currentStep < targetNotes.length) {
+      return targetNotes[currentStep];
+    }
+    return null;
   };
 
   return (
@@ -287,16 +327,26 @@ function App() {
           <p className="text-gray-400 text-lg">Darkwave • Synthwave • Dark Phonk</p>
           <div className="flex justify-center gap-4 mt-4">
             <span className="px-3 py-1 bg-pink-500/20 border border-pink-500/50 rounded-full text-sm text-pink-400">
-              🎹 MIDI Ready
+              🎹 TRUE POLYPHONY
             </span>
             <span className="px-3 py-1 bg-cyan-500/20 border border-cyan-500/50 rounded-full text-sm text-cyan-400">
-              FM Synth
+              {sequenceMode ? '🎯 SEQUENCE MODE' : '🎸 FREE MODE'}
             </span>
             <span className="px-3 py-1 bg-purple-500/20 border border-purple-500/50 rounded-full text-sm text-purple-400">
               {bpm} BPM
             </span>
           </div>
         </header>
+
+        {/* Sequential Lesson Player */}
+        {sequenceMode && (
+          <SequencePlayer
+            targetNotes={targetNotes}
+            currentStep={currentStep}
+            onPlayGuide={playGuideNote}
+            lessonName={lessons[currentLesson]?.name || ''}
+          />
+        )}
 
         {/* Waveform Display */}
         <WaveformDisplay isPlaying={isPlaying} />
@@ -335,11 +385,12 @@ function App() {
           setChorusRate={setChorusRate}
         />
 
-        {/* Piano Keyboard */}
+        {/* Piano Keyboard with guide note highlighting */}
         <div className="mb-6">
           <PianoKeyboard
             highlightedNotes={highlightedNotes}
             targetNotes={targetNotes}
+            guideNote={sequenceMode ? getCurrentGuideNote() : null}
             onKeyPress={(note) => {
               playNote(note, 0.8);
               handleKeyPress(note);
@@ -350,6 +401,20 @@ function App() {
 
         {/* Metronome */}
         <Metronome bpm={bpm} setBpm={setBpm} />
+
+        {/* Mode Toggle */}
+        <div className="flex justify-center mb-6">
+          <button
+            onClick={() => setSequenceMode(!sequenceMode)}
+            className={`px-6 py-3 rounded-full font-bold transition-all ${
+              sequenceMode
+                ? 'bg-gradient-to-r from-pink-500 to-purple-500 text-white shadow-lg'
+                : 'bg-gray-800 text-gray-400 hover:bg-gray-700'
+            }`}
+          >
+            {sequenceMode ? '🎯 Modo Secuencia Activo' : '🎸 Modo Libre'}
+          </button>
+        </div>
 
         {/* Lesson Grid */}
         <LessonGrid
@@ -367,6 +432,21 @@ function App() {
           />
         </div>
         <p className="text-center text-gray-500 mt-2">Progreso: {progress}%</p>
+
+        {/* Instructions */}
+        {sequenceMode && (
+          <div className="mt-6 p-4 bg-gradient-to-r from-purple-900/30 to-pink-900/30 rounded-xl border border-purple-500/30 text-center">
+            <p className="text-purple-300">
+              🎯 <strong>Modo Secuencia:</strong> Presiona las teclas en orden. La tecla verde es la siguiente nota que debes tocar.
+            </p>
+            <button
+              onClick={() => playGuideNote(targetNotes[currentStep])}
+              className="mt-2 px-4 py-2 bg-cyan-500/20 text-cyan-400 rounded-lg hover:bg-cyan-500/30 transition"
+            >
+              🔊 Escuchar nota guía
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
