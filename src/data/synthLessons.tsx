@@ -31,6 +31,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Easy',
     bpm: 80,
     tip: 'Mantén pulsado Do (C4). Experimenta con sine wave y reverb alto.',
+    concept: 'Nota sostenida',
+    explanation: 'Mantener una nota genera tensión y atmósfera',
+    emotion: 'Melancólico',
   },
   {
     id: 2,
@@ -41,6 +44,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Easy',
     bpm: 90,
     tip: 'Cambia entre waveforms y escucha cómo cambia el timbre.',
+    concept: 'Triada mayor',
+    explanation: 'Do–Mi–Sol forman un acorde mayor brillante',
+    emotion: 'Esperanzador',
   },
   {
     id: 3,
@@ -51,6 +57,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Easy',
     bpm: 120,
     tip: 'Sawtooth wave para ese sonido de bajo analógico clásico.',
+    concept: 'Línea de bajo',
+    explanation: 'El bajo guía la progresión armónica',
+    emotion: 'Energético',
   },
   {
     id: 4,
@@ -61,6 +70,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Easy',
     bpm: 80,
     tip: 'La escala menor da ese tono oscuro esencial del darkwave.',
+    concept: 'Escala menor',
+    explanation: 'La escala menor natural de La produce un sonido oscuro',
+    emotion: 'Sombrío',
   },
 
   // ── INTERMEDIATE ──────────────────────────────────────────────────────────
@@ -73,6 +85,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 110,
     tip: 'Reverb al 50%, delay suave. Deja que las notas se superpongan.',
+    concept: 'Arpegio menor',
+    explanation: 'Las notas del acorde tocadas en secuencia crean movimiento',
+    emotion: 'Introspectivo',
   },
   {
     id: 6,
@@ -83,6 +98,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 140,
     tip: 'Filtro bajo (400 Hz) y distortion para ese sonido grim.',
+    concept: 'Stab rítmico',
+    explanation: 'Ataque corto con silencios para crear groove agresivo',
+    emotion: 'Agresivo',
   },
   {
     id: 7,
@@ -93,6 +111,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 130,
     tip: 'Square wave + delay a tempo para efecto de riser.',
+    concept: 'Salto de octava',
+    explanation: 'Alternar octavas expande el rango melódico',
+    emotion: 'Exaltante',
   },
   {
     id: 8,
@@ -103,6 +124,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 70,
     tip: 'Sine wave, ataque lento (0.5s), chorus activo. Muy atmosférico.',
+    concept: 'Pad atmosférico',
+    explanation: 'Acordes sostenidos con movimiento interno generan textura',
+    emotion: 'Ethereal',
   },
   {
     id: 9,
@@ -113,6 +137,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 60,
     tip: 'Reverb máximo, volumen moderado. Perfecto para layering.',
+    concept: 'Textura ambiental',
+    explanation: 'Notas ascendentes lentas crean una sensación de expansión',
+    emotion: 'Espacioso',
   },
   {
     id: 10,
@@ -123,6 +150,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 125,
     tip: 'Delay sincopado, reverb medio, ataque rápido. Puro 80s.',
+    concept: 'Stab de acorde',
+    explanation: 'Ataque rápido en bloque armónico, sello del synthwave',
+    emotion: 'Triunfante',
   },
 
   // ── ADVANCED ──────────────────────────────────────────────────────────────
@@ -135,6 +165,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Hard',
     bpm: 150,
     tip: 'Distortion alto, delay corto, ataque instantáneo.',
+    concept: 'Lead rápido',
+    explanation: 'Melodía veloz con distortion y ataque instantáneo',
+    emotion: 'Intenso',
   },
   {
     id: 12,
@@ -145,6 +178,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Hard',
     bpm: 90,
     tip: 'Triangle wave, chorus máximo, reverb espacial.',
+    concept: 'Secuencia dreamwave',
+    explanation: 'Melodía ascendente y descendente con chorus y reverb',
+    emotion: 'Onírico',
   },
 
   // ── MELODIES ──────────────────────────────────────────────────────────────
@@ -158,6 +194,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Easy',
     bpm: 70,
     tip: 'La menor descendente. Sine wave + reverb máximo. Oscuro y romántico.',
+    concept: 'Melodía menor',
+    explanation: 'Línea descendente en La menor, evocadora y romántica',
+    emotion: 'Romántico',
   },
   {
     id: 14,
@@ -168,6 +207,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 120,
     tip: 'Sawtooth wave, delay al tempo. Arpegio C menor — corazón del synthwave.',
+    concept: 'Arpegio de C menor',
+    explanation: 'Arpegio clásico del synthwave sobre C menor',
+    emotion: 'Nostálgico',
   },
   {
     id: 15,
@@ -178,6 +220,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Medium',
     bpm: 140,
     tip: 'E frigio: la segunda bemol (F) da sabor árabe oscuro. Square + distortion.',
+    concept: 'Modo frigio',
+    explanation: 'El segundo grado bemol da el característico sabor árabe oscuro',
+    emotion: 'Misterioso',
   },
   {
     id: 16,
@@ -188,6 +233,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Hard',
     bpm: 165,
     tip: 'Sawtooth distorsionado, rápido y agresivo. Filtro abierto, delay seco.',
+    concept: 'Riff agresivo',
+    explanation: 'Secuencia rápida y disonante con sawtooth distorsionado',
+    emotion: 'Belicoso',
   },
   {
     id: 17,
@@ -198,6 +246,9 @@ export const lessons: SynthLesson[] = [
     difficulty: 'Hard',
     bpm: 150,
     tip: 'C menor con cromatismo. Alta velocidad, sawtooth, filtro abierto al 100%.',
+    concept: 'Cromatismo',
+    explanation: 'Notas cromáticas en C menor crean tensión y velocidad',
+    emotion: 'Angustiante',
   },
 ];
 

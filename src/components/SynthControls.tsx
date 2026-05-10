@@ -1,5 +1,3 @@
-import { useEffect } from 'react';
-import * as Tone from 'tone';
 import Knob from './Knob';
 
 interface SynthControlsProps {
@@ -31,13 +29,8 @@ const SynthControls: React.FC<SynthControlsProps> = ({
   volume, setVolume,
   detune, setDetune,
 }) => {
-  useEffect(() => {
-    Tone.getDestination().volume.value = -24;
-  }, []);
-
   const handleVolChange = (value: number) => {
     setVolume(value);
-    Tone.getDestination().volume.value = (value * 26) - 32;
   };
 
   return (

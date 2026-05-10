@@ -1,24 +1,22 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import * as Tone from 'tone';
 import PianoKeyboard from './components/PianoKeyboard';
 import SynthControls from './components/SynthControls';
 import EffectsPanel from './components/EffectsPanel';
 import SequencePlayer from './components/SequencePlayer';
 import PianoRoll from './components/PianoRoll';
+import { PianoRollTrack } from './components/PianoRollTrack';
 import SheetMusic from './components/SheetMusic';
 import WaveformDisplay from './components/WaveformDisplay';
+import { RecordingControls } from './components/RecordingControls';
+import { TrackList } from './components/TrackList';
+import { ExportButton } from './components/ExportButton';
 import { lessons, genreIcons, genrePresets, type Genre } from './data/synthLessons';
+import { useRecorder } from './hooks/useRecorder';
+import { useLessonStore } from './store/lessonStore';
+import { useTrackStore } from './store/trackStore';
 
 export type LessonScore = { accuracy: number; completed: boolean };
-
-// ── Distortion curve ─────────────────────────────────────────────────────────
-function makeDistortionCurve(amount: number, samples = 256): Float32Array {
-  const curve = new Float32Array(samples);
-  for (let i = 0; i < samples; i++) {
-    const x = (i * 2) / samples - 1;
-    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
-  }
-  return curve;
-}
 
 // ── BPM strip ────────────────────────────────────────────────────────────────
 const BPM_PRESETS = [60, 80, 100, 120, 140, 160];
@@ -106,6 +104,39 @@ function SidebarLesson({
   );
 }
 
+// ── Recording track view ─────────────────────────────────────────────────
+function RecordingTrackSection() {
+  const tracks = useTrackStore((s) => s.tracks);
+  const activeTrackId = useTrackStore((s) => s.activeTrackId);
+  const bpm = useLessonStore((s) => s.currentBpm);
+
+  const activeTrack = activeTrackId
+    ? tracks.find((t) => t.id === activeTrackId) ?? null
+    : tracks.find((t) => t.type === 'midi' && !t.readonly) ?? null;
+
+  if (!activeTrack || activeTrack.type !== 'midi') return null;
+  if (activeTrack.events.length === 0) return null;
+
+  const referenceTrack = tracks.find(
+    (t) => t.type === 'midi' && t.readonly && t.id !== activeTrack.id,
+  );
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between">
+        <span className="text-[9px] font-bold text-gray-600 tracking-widest uppercase">
+          {activeTrack.name}
+        </span>
+      </div>
+      <PianoRollTrack
+        events={activeTrack.events}
+        referenceEvents={referenceTrack?.type === 'midi' ? referenceTrack.events : undefined}
+        bpm={bpm}
+      />
+    </div>
+  );
+}
+
 // ── App ───────────────────────────────────────────────────────────────────────
 function App() {
   // Lesson
@@ -139,7 +170,7 @@ function App() {
   const [decay, setDecay] = useState(0.3);
   const [sustain, setSustain] = useState(0.4);
   const [release, setRelease] = useState(0.5);
-  const [volume, setVolume] = useState(0.2);
+  const [volume, setVolume] = useState(0.75);
   const [detune, setDetune] = useState(0);
 
   // FX
@@ -151,129 +182,48 @@ function App() {
   const [chorusRate, setChorusRate] = useState(0);
 
   // Audio nodes
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const convolverRef = useRef<ConvolverNode | null>(null);
-  const delayRef = useRef<DelayNode | null>(null);
-  const delayFeedbackRef = useRef<GainNode | null>(null);
-  const masterGainRef = useRef<GainNode | null>(null);
-  const distortionNodeRef = useRef<WaveShaperNode | null>(null);
-  const chorusNodesRef = useRef<{ delay: DelayNode; lfo: OscillatorNode; lfoGain: GainNode }[]>([]);
-  const activeNotesRef = useRef<Map<number, { oscs: OscillatorNode[]; gainNode: GainNode }>>(new Map());
-  const cleanupTimeoutsRef = useRef<Map<number, number>>(new Map());
   const midiDebounceRef = useRef<Map<number, number>>(new Map());
-
-  // ── Audio init ────────────────────────────────────────────────────────────
-  const initAudio = useCallback(() => {
-    if (!audioContextRef.current) audioContextRef.current = new AudioContext();
-    if (audioContextRef.current.state === 'suspended') audioContextRef.current.resume();
-    if (!masterGainRef.current) {
-      const ctx = audioContextRef.current;
-      masterGainRef.current = ctx.createGain();
-      masterGainRef.current.gain.value = volume;
-      masterGainRef.current.connect(ctx.destination);
-
-      convolverRef.current = ctx.createConvolver();
-      const sr = ctx.sampleRate;
-      const imp = ctx.createBuffer(2, sr * 2, sr);
-      for (let ch = 0; ch < 2; ch++) {
-        const d = imp.getChannelData(ch);
-        for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / (sr * 0.5));
-      }
-      convolverRef.current.buffer = imp;
-
-      delayRef.current = ctx.createDelay(1);
-      delayRef.current.delayTime.value = delayTime;
-      delayFeedbackRef.current = ctx.createGain();
-      delayFeedbackRef.current.gain.value = 0.4;
-      delayRef.current.connect(delayFeedbackRef.current);
-      delayFeedbackRef.current.connect(delayRef.current);
-
-      distortionNodeRef.current = ctx.createWaveShaper();
-      distortionNodeRef.current.curve = makeDistortionCurve(400);
-      distortionNodeRef.current.oversample = '4x';
-
-      const mkChorus = (freq: number, depth: number) => {
-        const d = ctx.createDelay(0.05);
-        const lfo = ctx.createOscillator();
-        const g = ctx.createGain();
-        lfo.frequency.value = freq; lfo.type = 'sine'; g.gain.value = depth;
-        lfo.connect(g); g.connect(d.delayTime); lfo.start();
-        chorusNodesRef.current.push({ delay: d, lfo, lfoGain: g });
-      };
-      mkChorus(1.5, 0.002); mkChorus(1.8, 0.0015);
-    }
-    return audioContextRef.current;
-  }, []);
+  const toneChainRef = useRef<{
+    synth: Tone.PolySynth;
+    filter: Tone.Filter;
+    distNode: Tone.Distortion;
+    reverb: Tone.Reverb;
+    delay: Tone.FeedbackDelay;
+    chorus: Tone.Chorus;
+  } | null>(null);
 
   // ── Play / Stop note ─────────────────────────────────────────────────────
   const playNote = useCallback((midiNote: number, velocity = 0.8) => {
-    const ctx = initAudio();
-    if (activeNotesRef.current.has(midiNote)) {
-      const t = cleanupTimeoutsRef.current.get(midiNote);
-      if (t) { clearTimeout(t); cleanupTimeoutsRef.current.delete(midiNote); }
-      const old = activeNotesRef.current.get(midiNote)!;
-      try { old.oscs.forEach(o => o.stop()); old.oscs.forEach(o => o.disconnect()); old.gainNode.disconnect(); } catch (_) {}
-      activeNotesRef.current.delete(midiNote);
-    }
-
-    const freq = 440 * Math.pow(2, (midiNote - 69) / 12);
-    const osc1 = ctx.createOscillator(), osc2 = ctx.createOscillator();
-    const gainNode = ctx.createGain(), filterNode = ctx.createBiquadFilter();
-    osc1.type = waveform; osc1.frequency.value = freq * (1 + detune / 1000);
-    osc2.type = waveform; osc2.frequency.value = freq * 2.02;
-    filterNode.type = 'lowpass'; filterNode.frequency.value = filterCutoff; filterNode.Q.value = 2;
-
-    const now = ctx.currentTime;
-    gainNode.gain.setValueAtTime(0, now);
-    gainNode.gain.linearRampToValueAtTime(velocity * volume, now + attack);
-    gainNode.gain.exponentialRampToValueAtTime(velocity * volume * sustain, now + attack + decay);
-    osc1.connect(gainNode); osc2.connect(gainNode); gainNode.connect(filterNode);
-
-    const dry = ctx.createGain(); dry.gain.value = 1 - distortion;
-    const wet = ctx.createGain(); wet.gain.value = distortion;
-    if (distortion > 0 && distortionNodeRef.current && masterGainRef.current) {
-      filterNode.connect(distortionNodeRef.current); distortionNodeRef.current.connect(wet); wet.connect(masterGainRef.current);
-    }
-    filterNode.connect(dry);
-    if (masterGainRef.current) dry.connect(masterGainRef.current);
-
-    if (delayMix > 0 && delayRef.current && delayFeedbackRef.current && masterGainRef.current) {
-      const dg = ctx.createGain(); dg.gain.value = delayMix;
-      delayRef.current.delayTime.value = delayTime;
-      filterNode.connect(delayRef.current); delayRef.current.connect(dg); dg.connect(masterGainRef.current);
-    }
-    if (reverbMix > 0 && convolverRef.current && masterGainRef.current) {
-      const rg = ctx.createGain(); rg.gain.value = reverbMix;
-      filterNode.connect(rg); rg.connect(convolverRef.current); convolverRef.current.connect(masterGainRef.current);
-    }
-    if (chorusRate > 0) {
-      chorusNodesRef.current.forEach(({ delay, lfoGain }) => {
-        lfoGain.gain.value = chorusRate * 0.003;
-        filterNode.connect(delay); delay.connect(masterGainRef.current!);
+    if (!toneChainRef.current) {
+      Tone.start();
+      const synth = new Tone.PolySynth(Tone.Synth, {
+        oscillator: { type: waveform },
+        envelope: { attack, decay, sustain, release },
       });
+      const filter = new Tone.Filter(filterCutoff, 'lowpass');
+      const distNode = new Tone.Distortion(distortion);
+      const reverb = new Tone.Reverb({ decay: 3, wet: reverbMix });
+      const delay = new Tone.FeedbackDelay(delayTime, delayMix);
+      const chorus = new Tone.Chorus(chorusRate, 3.5, 0.5);
+      synth.chain(filter, distNode, delay, chorus, reverb);
+      reverb.toDestination();
+      chorus.start();
+      Tone.Destination.volume.value = (volume * 26) - 32;
+      toneChainRef.current = { synth, filter, distNode, reverb, delay, chorus };
     }
-
-    osc1.start(); osc2.start();
-    activeNotesRef.current.set(midiNote, { oscs: [osc1, osc2], gainNode });
+    const note = Tone.Frequency(midiNote, 'midi').toNote();
+    toneChainRef.current.synth.triggerRelease(note, Tone.now());
+    toneChainRef.current.synth.triggerAttack(note, Tone.now() + 0.005, velocity);
     setPressedNotes(prev => prev.includes(midiNote) ? prev : [...prev, midiNote]);
     setIsPlaying(true);
-  }, [initAudio, waveform, attack, decay, sustain, volume, detune, filterCutoff, reverbMix, delayTime, delayMix, distortion, chorusRate]);
+  }, [waveform, attack, decay, sustain, release, filterCutoff, distortion, reverbMix, delayTime, delayMix, chorusRate, volume]);
 
   const stopNote = useCallback((midiNote: number) => {
-    const ctx = audioContextRef.current;
-    if (!ctx || !activeNotesRef.current.has(midiNote)) return;
-    const ex = cleanupTimeoutsRef.current.get(midiNote);
-    if (ex) clearTimeout(ex);
-    const note = activeNotesRef.current.get(midiNote)!;
-    note.gainNode.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + release);
-    const id = window.setTimeout(() => {
-      try { note.oscs.forEach(o => o.stop()); note.oscs.forEach(o => o.disconnect()); note.gainNode.disconnect(); } catch (_) {}
-      activeNotesRef.current.delete(midiNote);
-      cleanupTimeoutsRef.current.delete(midiNote);
-      setPressedNotes(prev => prev.filter(n => n !== midiNote));
-    }, release * 1000 + 50);
-    cleanupTimeoutsRef.current.set(midiNote, id);
-  }, [release]);
+    if (!toneChainRef.current) return;
+    const note = Tone.Frequency(midiNote, 'midi').toNote();
+    toneChainRef.current.synth.triggerRelease(note, Tone.now());
+    setPressedNotes(prev => prev.filter(n => n !== midiNote));
+  }, []);
 
   const playGuideNote = useCallback((note: number) => {
     playNote(note, 0.6);
@@ -289,7 +239,7 @@ function App() {
     demoTimeoutsRef.current = [];
     setIsDemoPlaying(false);
     setDemoStep(-1);
-    [...activeNotesRef.current.keys()].forEach(n => stopNoteRef.current(n));
+    toneChainRef.current?.synth.releaseAll();
   }, []);
 
   const playDemoMelody = useCallback(() => {
@@ -305,6 +255,38 @@ function App() {
     timeouts.push(window.setTimeout(() => { setIsDemoPlaying(false); setDemoStep(-1); }, targetNotes.length * beatMs + 300));
     demoTimeoutsRef.current = timeouts;
   }, [isDemoPlaying, targetNotes, bpm, stopDemo]);
+
+  // ── Sync Tone chain to state ──────────────────────────────────────────────
+  useEffect(() => {
+    const chain = toneChainRef.current;
+    if (!chain) return;
+    chain.synth.set({ oscillator: { type: waveform } });
+    chain.synth.set({ envelope: { attack, decay, sustain, release } });
+    chain.synth.set({ detune: detune * 1.7 });
+    chain.filter.frequency.value = filterCutoff;
+    chain.distNode.distortion = distortion;
+    chain.reverb.wet.value = reverbMix;
+    chain.delay.delayTime.value = delayTime;
+    chain.delay.feedback.value = delayMix;
+    chain.chorus.frequency.value = chorusRate;
+    Tone.Destination.volume.value = (volume * 26) - 32;
+  }, [waveform, attack, decay, sustain, release, detune, filterCutoff, distortion, reverbMix, delayTime, delayMix, chorusRate, volume]);
+
+  // ── Cleanup Tone chain on unmount ─────────────────────────────────────────
+  useEffect(() => {
+    return () => {
+      if (toneChainRef.current) {
+        const { synth, filter, distNode, reverb, delay, chorus } = toneChainRef.current;
+        synth.dispose();
+        filter.dispose();
+        distNode.dispose();
+        reverb.dispose();
+        delay.dispose();
+        chorus.dispose();
+        toneChainRef.current = null;
+      }
+    };
+  }, []);
 
   // ── Key press ─────────────────────────────────────────────────────────────
   const handleKeyPress = useCallback((note: number) => {
@@ -332,6 +314,12 @@ function App() {
     }
   }, [targetNotes, currentStep, sequenceMode, isDemoPlaying, correctCount, wrongCount, currentLesson]);
 
+  // ── Recording hook ───────────────────────────────────────────────────────
+  const recorder = useRecorder();
+  const hasMidiEvents = useTrackStore((s) =>
+    s.tracks.some((t) => t.type === 'midi' && t.events.length > 0),
+  );
+
   // ── MIDI (stable ref registration) ───────────────────────────────────────
   const handleKeyPressRef = useRef(handleKeyPress);
   handleKeyPressRef.current = handleKeyPress;
@@ -348,8 +336,10 @@ function App() {
         midiDebounceRef.current.set(note, now);
         playNoteRef.current(note, velocity / 127);
         handleKeyPressRef.current(note);
+        recorder.handleMidiNoteOn(note, velocity / 127);
       } else if ((status >= 128 && status <= 143) || (status >= 144 && status <= 159 && velocity === 0)) {
         stopNoteRef.current(note);
+        recorder.handleMidiNoteOff(note);
       }
     };
     let midiAccess: MIDIAccess | null = null;
@@ -392,6 +382,8 @@ function App() {
     setBpm(lesson.bpm);
     resetScore();
     applyGenrePreset(lesson.genre);
+    useLessonStore.getState().setGenre(lesson.genre);
+    useLessonStore.getState().setBpm(lesson.bpm);
   }, [currentLesson]);
 
   const selectLesson = (index: number) => {
@@ -570,6 +562,9 @@ function App() {
               </div>
             )}
 
+            {/* Recording track view */}
+            {hasMidiEvents && <RecordingTrackSection />}
+
             {/* Synth + FX knob panels side by side */}
             <div className="grid grid-cols-2 gap-2">
               <SynthControls
@@ -595,6 +590,13 @@ function App() {
 
           {/* ── FIXED KEYBOARD STRIP ── */}
           <div className="flex-shrink-0 border-t border-purple-900/30 bg-black/80 backdrop-blur-sm px-3 pt-2 pb-2">
+            <div className="flex items-center gap-2 mb-1">
+              <RecordingControls />
+              <div className="flex-1 min-w-0 min-h-[40px] border border-white/10">
+                <TrackList />
+              </div>
+              <ExportButton />
+            </div>
             <BpmControl bpm={bpm} setBpm={setBpm} />
             <div className="mt-2">
               <PianoKeyboard

@@ -6,24 +6,27 @@ export function playBass(): () => void {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.5, decay: 1.0, sustain: 0.65, release: 2.5 },
   });
-  const filter = new Tone.Filter(550, 'lowpass');
-  const reverb = new Tone.Reverb({ decay: 6, wet: 0.65 }).toDestination();
+  const limiter = new Tone.Limiter(-6).toDestination();
+  const reverb = new Tone.Reverb({ decay: 6, wet: 0.65 }).connect(limiter);
+  const distortion = new Tone.Distortion(0.12).connect(reverb);
+  const filter = new Tone.Filter(550, 'lowpass').connect(distortion);
   synth.connect(filter);
-  filter.connect(reverb);
   const sequence = new Tone.Sequence(
     (time, note) => synth.triggerAttackRelease(note, '4n', time),
     ['C2', 'Eb2', 'G2', 'Bb2', 'Eb2', 'G2', 'Bb2', 'C3'],
     '4n'
   ).start(0);
   sequence.loop = true;
-  sequence.loopEnd = '4m';
+  sequence.loopEnd = 13.7143;
   Tone.Transport.start();
   return () => {
     Tone.Transport.stop();
     Tone.Transport.cancel();
     synth.dispose();
     filter.dispose();
+    distortion.dispose();
     reverb.dispose();
+    limiter.dispose();
     sequence.dispose();
   };
 }
@@ -34,19 +37,18 @@ export function playPad(): () => void {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.5, decay: 1.0, sustain: 0.65, release: 2.5 },
   });
-  const filter = new Tone.Filter(550, 'lowpass');
-  const chorus = new Tone.Chorus(0.55, 4, 0.5);
-  const reverb = new Tone.Reverb({ decay: 7, wet: 0.65 }).toDestination();
+  const limiter = new Tone.Limiter(-6).toDestination();
+  const reverb = new Tone.Reverb({ decay: 7, wet: 0.65 }).connect(limiter);
+  const chorus = new Tone.Chorus(0.55, 4, 0.5).connect(reverb);
+  const filter = new Tone.Filter(550, 'lowpass').connect(chorus);
   synth.connect(filter);
-  filter.connect(chorus);
-  chorus.connect(reverb);
   const sequence = new Tone.Sequence(
     (time, chord) => synth.triggerAttackRelease(chord, '2n', time),
     [['C3', 'Eb3', 'G3', 'Bb3'], ['Eb3', 'G3', 'Bb3', 'C4'], ['F3', 'Ab3', 'C4', 'Eb4'], ['G3', 'Bb3', 'Eb4', 'G4']],
     '4n'
   ).start(0);
   sequence.loop = true;
-  sequence.loopEnd = '4m';
+  sequence.loopEnd = 13.7143;
   Tone.Transport.start();
   return () => {
     Tone.Transport.stop();
@@ -55,6 +57,7 @@ export function playPad(): () => void {
     filter.dispose();
     chorus.dispose();
     reverb.dispose();
+    limiter.dispose();
     sequence.dispose();
   };
 }
@@ -65,10 +68,10 @@ export function playMelody(): () => void {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.6, decay: 0.8, sustain: 0.6, release: 3 },
   });
-  const filter = new Tone.Filter(600, 'lowpass');
+  const limiter = new Tone.Limiter(-6).toDestination();
+  const delay = new Tone.FeedbackDelay(0.6, 0.35).connect(limiter);
+  const filter = new Tone.Filter(600, 'lowpass').connect(delay);
   const chorus = new Tone.Chorus(0.55, 4, 0.5).connect(filter);
-  const delay = new Tone.FeedbackDelay(0.6, 0.35).toDestination();
-  filter.connect(delay);
   synth.connect(chorus);
   const sequence = new Tone.Sequence(
     (time, note) => synth.triggerAttackRelease(note, '4n', time),
@@ -76,7 +79,7 @@ export function playMelody(): () => void {
     '4n'
   ).start(0);
   sequence.loop = true;
-  sequence.loopEnd = '4m';
+  sequence.loopEnd = 13.7143;
   Tone.Transport.start();
   return () => {
     Tone.Transport.stop();
@@ -85,20 +88,26 @@ export function playMelody(): () => void {
     filter.dispose();
     chorus.dispose();
     delay.dispose();
+    limiter.dispose();
     sequence.dispose();
   };
 }
 
 export function playFull(): () => void {
   Tone.Transport.bpm.value = 70;
+  const masterGain = new Tone.Gain(0.3).toDestination();
+  const limiter = new Tone.Limiter(-6).connect(masterGain);
+
   const bassSynth = new Tone.Synth({
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.5, decay: 1.0, sustain: 0.65, release: 2.5 },
   });
   const bassFilter = new Tone.Filter(550, 'lowpass');
-  const bassReverb = new Tone.Reverb({ decay: 6, wet: 0.65 }).toDestination();
+  const bassDist = new Tone.Distortion(0.12);
+  const bassReverb = new Tone.Reverb({ decay: 6, wet: 0.65 }).connect(limiter);
   bassSynth.connect(bassFilter);
-  bassFilter.connect(bassReverb);
+  bassFilter.connect(bassDist);
+  bassDist.connect(bassReverb);
 
   const padSynth = new Tone.PolySynth(Tone.Synth, {
     oscillator: { type: 'triangle' },
@@ -106,7 +115,7 @@ export function playFull(): () => void {
   });
   const padFilter = new Tone.Filter(550, 'lowpass');
   const padChorus = new Tone.Chorus(0.55, 4, 0.5);
-  const padReverb = new Tone.Reverb({ decay: 7, wet: 0.65 }).toDestination();
+  const padReverb = new Tone.Reverb({ decay: 7, wet: 0.65 }).connect(limiter);
   padSynth.connect(padFilter);
   padFilter.connect(padChorus);
   padChorus.connect(padReverb);
@@ -115,11 +124,12 @@ export function playFull(): () => void {
     oscillator: { type: 'triangle' },
     envelope: { attack: 0.6, decay: 0.8, sustain: 0.6, release: 3 },
   });
+  const melodyChorus = new Tone.Chorus(0.55, 4, 0.5);
   const melodyFilter = new Tone.Filter(600, 'lowpass');
-  const melodyChorus = new Tone.Chorus(0.55, 4, 0.5).connect(melodyFilter);
-  const melodyDelay = new Tone.FeedbackDelay(0.6, 0.35).toDestination();
-  melodyFilter.connect(melodyDelay);
+  const melodyDelay = new Tone.FeedbackDelay(0.6, 0.35).connect(limiter);
   melodySynth.connect(melodyChorus);
+  melodyChorus.connect(melodyFilter);
+  melodyFilter.connect(melodyDelay);
 
   const bassSeq = new Tone.Sequence(
     (time, note) => bassSynth.triggerAttackRelease(note, '4n', time),
@@ -127,7 +137,7 @@ export function playFull(): () => void {
     '4n'
   ).start(0);
   bassSeq.loop = true;
-  bassSeq.loopEnd = '4m';
+  bassSeq.loopEnd = 13.7143;
 
   const padSeq = new Tone.Sequence(
     (time, chord) => padSynth.triggerAttackRelease(chord, '2n', time),
@@ -135,7 +145,7 @@ export function playFull(): () => void {
     '4n'
   ).start(0);
   padSeq.loop = true;
-  padSeq.loopEnd = '4m';
+  padSeq.loopEnd = 13.7143;
 
   const melodySeq = new Tone.Sequence(
     (time, note) => melodySynth.triggerAttackRelease(note, '4n', time),
@@ -143,7 +153,7 @@ export function playFull(): () => void {
     '4n'
   ).start(0);
   melodySeq.loop = true;
-  melodySeq.loopEnd = '4m';
+  melodySeq.loopEnd = 13.7143;
 
   Tone.Transport.start();
   return () => {
@@ -151,15 +161,18 @@ export function playFull(): () => void {
     Tone.Transport.cancel();
     bassSynth.dispose();
     bassFilter.dispose();
+    bassDist.dispose();
     bassReverb.dispose();
     padSynth.dispose();
     padFilter.dispose();
     padChorus.dispose();
     padReverb.dispose();
     melodySynth.dispose();
-    melodyFilter.dispose();
     melodyChorus.dispose();
+    melodyFilter.dispose();
     melodyDelay.dispose();
+    limiter.dispose();
+    masterGain.dispose();
     bassSeq.dispose();
     padSeq.dispose();
     melodySeq.dispose();

@@ -137,7 +137,7 @@ const SheetMusic: React.FC<SheetMusicProps> = ({
 
       for (let ni = start; ni < end; ni++) {
         const { key, sharp } = midiToVex(notes[ni]);
-        const sn = new StaveNote({ keys: [key], duration: 'q', auto_stem: true });
+        const sn = new StaveNote({ keys: [key], duration: 'q', autoStem: true });
 
         // FIX 2: past=green, current=cyan, future=pitch color
         const noteColor =
@@ -161,7 +161,7 @@ const SheetMusic: React.FC<SheetMusicProps> = ({
         barNotes.push(rest);
       }
 
-      const voice = new Voice({ num_beats: 4, beat_value: 4 });
+      const voice = new Voice({ numBeats: 4, beatValue: 4 });
       voice.setStrict(false);
       voice.addTickables(barNotes);
       const fmtWidth = thisBarW - (isFirst ? FIRST_XTRA + BAR_PAD : BAR_PAD);
