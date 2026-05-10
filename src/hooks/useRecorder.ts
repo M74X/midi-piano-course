@@ -35,26 +35,21 @@ export function useRecorder() {
   const startRecording = useCallback(() => {
     if (useTrackStore.getState().isRecording) return;
     const store = useTrackStore.getState();
-    const hasMidiTrack = store.tracks.some(
-      (t) => t.type === 'midi' && !t.readonly,
-    );
-    if (!hasMidiTrack) {
-      const newTrack: Omit<MidiTrackData, 'id'> = {
-        name: 'Student Recording',
-        type: 'midi',
-        events: [],
-        color: '#22d3ee',
-        muted: false,
-        soloed: false,
-        volume: 1,
-        readonly: false,
-      };
-      const id = store.addTrack(newTrack);
-      store.setActiveTrack(id);
-    } else {
-      const midiTrack = store.tracks.find((t) => t.type === 'midi' && !t.readonly);
-      if (midiTrack) store.setActiveTrack(midiTrack.id);
-    }
+    const takeCount = store.tracks.filter(
+      (t) => t.type === 'midi' && !t.readonly && t.name.startsWith('Take'),
+    ).length;
+    const newTrack: Omit<MidiTrackData, 'id'> = {
+      name: `Take ${takeCount + 1}`,
+      type: 'midi',
+      events: [],
+      color: '#22d3ee',
+      muted: false,
+      soloed: false,
+      volume: 1,
+      readonly: false,
+    };
+    const id = store.addTrack(newTrack);
+    store.setActiveTrack(id);
     if (Tone.Transport.state !== 'started') {
       Tone.Transport.start();
     }

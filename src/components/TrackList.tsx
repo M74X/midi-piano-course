@@ -1,11 +1,44 @@
+import { useState } from 'react';
 import { useTrackStore } from '@/store/trackStore';
-import type { TrackData } from '@/store/types';
+import { useTrackPlayer } from '@/hooks/useTrackPlayer';
+import type { TrackData, MidiTrackData } from '@/store/types';
 
 function TrackIcon({ track }: { track: TrackData }) {
   return (
     <span className="text-xs">
       {track.type === 'audio' ? '♫' : '♩'}
     </span>
+  );
+}
+
+function PlayButton({ track }: { track: MidiTrackData }) {
+  const { play, stop } = useTrackPlayer();
+  const [playing, setPlaying] = useState(false);
+
+  if (track.events.length === 0) return null;
+
+  return (
+    <button
+      onClick={() => {
+        if (playing) {
+          stop();
+          setPlaying(false);
+        } else {
+          play(track.events);
+          setPlaying(true);
+          setTimeout(() => setPlaying(false), 20000);
+        }
+      }}
+      className={
+        'h-5 w-5 rounded text-[10px] font-bold transition-colors ' +
+        (playing
+          ? 'bg-green-900/40 text-green-400'
+          : 'bg-white/5 text-white/30 hover:bg-white/10')
+      }
+      title={playing ? 'Stop' : 'Play'}
+    >
+      {playing ? '■' : '▶'}
+    </button>
   );
 }
 
@@ -26,6 +59,8 @@ function TrackRow({ track, isActive }: { track: TrackData; isActive: boolean }) 
         <TrackIcon track={track} />
         <span className="truncate text-xs text-white/70">{track.name}</span>
       </button>
+
+      {track.type === 'midi' && <PlayButton track={track} />}
 
       <button
         onClick={() => toggleMute(track.id)}
