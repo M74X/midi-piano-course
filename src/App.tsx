@@ -6,9 +6,19 @@ import SequencePlayer from './components/SequencePlayer';
 import PianoRoll from './components/PianoRoll';
 import SheetMusic from './components/SheetMusic';
 import WaveformDisplay from './components/WaveformDisplay';
-import { lessons, genreIcons, genrePresets } from './data/synthLessons';
+import { lessons, genreIcons, genrePresets, type Genre } from './data/synthLessons';
 
 export type LessonScore = { accuracy: number; completed: boolean };
+
+// ── Distortion curve ─────────────────────────────────────────────────────────
+function makeDistortionCurve(amount: number, samples = 256): Float32Array {
+  const curve = new Float32Array(samples);
+  for (let i = 0; i < samples; i++) {
+    const x = (i * 2) / samples - 1;
+    curve[i] = ((Math.PI + amount) * x) / (Math.PI + amount * Math.abs(x));
+  }
+  return curve;
+}
 
 // ── BPM strip ────────────────────────────────────────────────────────────────
 const BPM_PRESETS = [60, 80, 100, 120, 140, 160];
@@ -40,9 +50,13 @@ function BpmControl({ bpm, setBpm }: { bpm: number; setBpm: (v: number) => void 
 
 // ── Genre badge ───────────────────────────────────────────────────────────────
 const GENRE_STYLE: Record<string, { pill: string; dot: string }> = {
-  darkwave: { pill: 'bg-purple-900/40 text-purple-400 border border-purple-500/30', dot: 'bg-purple-500' },
-  synthwave: { pill: 'bg-pink-900/40 text-pink-400 border border-pink-500/30',      dot: 'bg-pink-500' },
-  darkphonk: { pill: 'bg-red-900/40 text-red-400 border border-red-500/30',         dot: 'bg-red-500' },
+  darkambient: { pill: 'bg-indigo-900/40 text-indigo-400 border border-indigo-500/30',  dot: 'bg-indigo-500'  },
+  darkwave:    { pill: 'bg-purple-900/40 text-purple-400 border border-purple-500/30',  dot: 'bg-purple-500'  },
+  synthwave:   { pill: 'bg-pink-900/40 text-pink-400 border border-pink-500/30',        dot: 'bg-pink-500'    },
+  darksynth:   { pill: 'bg-red-900/40 text-red-400 border border-red-500/30',           dot: 'bg-red-500'     },
+  darkphonk:   { pill: 'bg-green-900/40 text-green-400 border border-green-500/30',     dot: 'bg-green-500'   },
+  witchhouse:  { pill: 'bg-violet-900/40 text-violet-400 border border-violet-500/30',  dot: 'bg-violet-500'  },
+  industrial:  { pill: 'bg-orange-900/40 text-orange-400 border border-orange-500/30',  dot: 'bg-orange-500'  },
 };
 
 // ── Lesson sidebar item ───────────────────────────────────────────────────────
@@ -125,7 +139,7 @@ function App() {
   const [decay, setDecay] = useState(0.3);
   const [sustain, setSustain] = useState(0.4);
   const [release, setRelease] = useState(0.5);
-  const [volume, setVolume] = useState(0.7);
+  const [volume, setVolume] = useState(0.2);
   const [detune, setDetune] = useState(0);
 
   // FX
@@ -142,7 +156,7 @@ function App() {
   const delayRef = useRef<DelayNode | null>(null);
   const delayFeedbackRef = useRef<GainNode | null>(null);
   const masterGainRef = useRef<GainNode | null>(null);
-  const distortionNodeRef = useRef<DynamicsCompressorNode | null>(null);
+  const distortionNodeRef = useRef<WaveShaperNode | null>(null);
   const chorusNodesRef = useRef<{ delay: DelayNode; lfo: OscillatorNode; lfoGain: GainNode }[]>([]);
   const activeNotesRef = useRef<Map<number, { oscs: OscillatorNode[]; gainNode: GainNode }>>(new Map());
   const cleanupTimeoutsRef = useRef<Map<number, number>>(new Map());
@@ -174,10 +188,9 @@ function App() {
       delayRef.current.connect(delayFeedbackRef.current);
       delayFeedbackRef.current.connect(delayRef.current);
 
-      distortionNodeRef.current = ctx.createDynamicsCompressor();
-      distortionNodeRef.current.threshold.value = -20;
-      distortionNodeRef.current.knee.value = 10;
-      distortionNodeRef.current.ratio.value = 4;
+      distortionNodeRef.current = ctx.createWaveShaper();
+      distortionNodeRef.current.curve = makeDistortionCurve(400);
+      distortionNodeRef.current.oversample = '4x';
 
       const mkChorus = (freq: number, depth: number) => {
         const d = ctx.createDelay(0.05);
@@ -353,7 +366,7 @@ function App() {
     setCorrectCount(0); setWrongCount(0); setStreak(0); setLessonComplete(null);
   };
 
-  const applyGenrePreset = (genre: 'darkwave' | 'synthwave' | 'darkphonk') => {
+  const applyGenrePreset = (genre: Genre) => {
     const p = genrePresets[genre];
     setWaveform(p.waveform);
     setAttack(p.attack);

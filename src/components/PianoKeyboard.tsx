@@ -1,3 +1,6 @@
+import { useRef, useEffect } from 'react';
+import { getNoteColor } from '../utils/noteColors';
+
 interface PianoKeyboardProps {
   guideNote: number | null;
   highlightedNotes: number[];
@@ -10,17 +13,40 @@ interface PianoKeyboardProps {
 
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 
-// DAW-style compact dimensions
-const WHITE_W = 22;  // px
-const WHITE_H = 72;  // px
-const BLACK_W = 13;  // px  (~59% of white width — standard piano proportion)
-const BLACK_H = 44;  // px  (~61% of white height)
-const OCT_W   = 7 * WHITE_W; // 154px per octave
+const WHITE_W = 22;
+const WHITE_H = 72;
+const BLACK_W = 13;
+const BLACK_H = 44;
 
-// Semitone index → number of preceding white keys in octave (for positioning)
-const BLACK_KEY_POS: Record<number, number> = { 1: 0, 3: 1, 6: 3, 8: 4, 10: 5 };
+const START_MIDI = 21;  // A0
+const END_MIDI   = 108; // C8
 
-const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
+const isBlackKey = (note: number) => [1, 3, 6, 8, 10].includes(note % 12);
+
+// Pre-compute full 88-key layout once at module level
+const layout = (() => {
+  const whites: { note: number; wIdx: number }[] = [];
+  const blacks: { note: number; left: number }[] = [];
+  let wIdx = 0;
+  for (let n = START_MIDI; n <= END_MIDI; n++) {
+    if (isBlackKey(n)) {
+      // Black key sits between the last placed white and the next one
+      blacks.push({ note: n, left: wIdx * WHITE_W - BLACK_W / 2 });
+    } else {
+      whites.push({ note: n, wIdx });
+      wIdx++;
+    }
+  }
+  return { whites, blacks, totalWhite: wIdx }; // totalWhite === 52
+})();
+
+const TOTAL_WIDTH = layout.totalWhite * WHITE_W; // 52 × 22 = 1144 px
+
+// White key index of C4 (MIDI 60) — used for initial scroll
+const C4_WHITE_IDX = layout.whites.findIndex(k => k.note === 60);
+const C4_LEFT      = C4_WHITE_IDX * WHITE_W;
+
+function PianoKeyboard({
   guideNote,
   highlightedNotes,
   activeNotes,
@@ -28,33 +54,42 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
   beatMs,
   onKeyPress,
   onKeyRelease,
-}) => {
-  const START_NOTE = 36; // C2
-  const OCTAVES    = 5;  // C2 – B6  (≈ C2–C7, 61-key synth range)
+}: PianoKeyboardProps) {
+  const scrollRef = useRef<HTMLDivElement>(null);
 
-  const isBlackKey = (note: number) => [1, 3, 6, 8, 10].includes(note % 12);
+  // Center C4 on mount
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    el.scrollLeft = C4_LEFT - el.clientWidth / 2 + WHITE_W / 2;
+  }, []);
 
-  // Active octave = octave containing guideNote, or first highlighted note
-  const activeOctaveStart =
+  // Active octave: the MIDI octave (C{n}..B{n}) that contains guideNote or
+  // the first highlighted note — used for the cyan top-bar indicator.
+  const activeOctave =
     guideNote !== null
-      ? Math.floor((guideNote - START_NOTE) / 12)
+      ? Math.floor(guideNote / 12)
       : highlightedNotes.length > 0
-        ? Math.floor((highlightedNotes[0] - START_NOTE) / 12)
+        ? Math.floor(highlightedNotes[0] / 12)
         : null;
 
   const getKeyStyle = (note: number): React.CSSProperties => {
     const black = isBlackKey(note);
-
     if (wrongNotes.includes(note)) return {
       background: 'linear-gradient(180deg, #ef4444 0%, #b91c1c 100%)',
       boxShadow: '0 0 14px #ef4444',
     };
-    if (activeNotes.includes(note)) return {
-      background: highlightedNotes.includes(note)
-        ? 'linear-gradient(180deg, #10b981 0%, #059669 100%)'
-        : 'linear-gradient(180deg, #ec4899 0%, #db2777 100%)',
-      boxShadow: highlightedNotes.includes(note) ? '0 0 12px #10b981' : '0 0 12px #ec4899',
-    };
+    if (activeNotes.includes(note)) {
+      if (highlightedNotes.includes(note)) return {
+        background: 'linear-gradient(180deg, #10b981 0%, #059669 100%)',
+        boxShadow: '0 0 12px #10b981',
+      };
+      const col = getNoteColor(note);
+      return {
+        background: `linear-gradient(180deg, ${col} 0%, ${col}99 100%)`,
+        boxShadow: `0 0 12px ${col}`,
+      };
+    }
     if (highlightedNotes.includes(note)) return {
       background: 'linear-gradient(180deg, #10b981 0%, #059669 100%)',
       boxShadow: '0 0 10px #10b981',
@@ -78,117 +113,106 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
     note === guideNote || highlightedNotes.includes(note) ||
     activeNotes.includes(note) || wrongNotes.includes(note);
 
-  const renderOctave = (octaveOffset: number) => {
-    const isActive = activeOctaveStart === octaveOffset;
-
-    const whiteKeys: JSX.Element[] = [];
-    const blackDefs: { note: number; pos: number }[] = [];
-
-    for (let i = 0; i < 12; i++) {
-      const note = START_NOTE + octaveOffset * 12 + i;
-      const black = isBlackKey(note);
-
-      if (black) {
-        blackDefs.push({ note, pos: BLACK_KEY_POS[i] ?? 0 });
-      } else {
-        const isC = (note % 12 === 0);
-        whiteKeys.push(
-          <button
-            key={note}
-            className="relative transition-all duration-75 rounded-b-sm flex flex-col items-center justify-end pb-1 border-r border-gray-400/20"
-            style={{ width: WHITE_W, height: WHITE_H, ...getKeyStyle(note) }}
-            onMouseDown={() => onKeyPress(note)}
-            onMouseUp={() => onKeyRelease(note)}
-            onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
-            onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
-            onTouchEnd={() => onKeyRelease(note)}
-          >
-            {showLabel(note) && (
-              <span className="text-[9px] font-bold text-gray-700 leading-none">
-                {NOTE_NAMES[note % 12]}
-              </span>
-            )}
-            {/* Octave label on every C key */}
-            {isC && (
-              <span
-                className={`text-[7px] font-bold leading-none ${isActive ? 'text-cyan-500' : 'text-gray-500/60'}`}
-                style={{ marginTop: 1 }}
-              >
-                C{2 + octaveOffset}
-              </span>
-            )}
-          </button>
-        );
-      }
-    }
-
-    return (
-      <div
-        key={octaveOffset}
-        className="relative flex-shrink-0"
-        style={{ width: OCT_W }}
-      >
-        {/* Active octave top-bar indicator */}
-        {isActive && (
-          <div
-            className="absolute top-0 left-0 right-0 z-30 pointer-events-none"
-            style={{
-              height: 2,
-              background: '#22d3ee',
-              boxShadow: '0 0 6px #22d3ee, 0 0 12px #22d3ee',
-            }}
-          />
-        )}
-
-        {/* Non-active dimming overlay */}
-        {!isActive && activeOctaveStart !== null && (
-          <div
-            className="absolute inset-0 z-20 pointer-events-none"
-            style={{ background: 'rgba(0,0,0,0.22)' }}
-          />
-        )}
-
-        {/* White keys */}
-        <div className="flex">{whiteKeys}</div>
-
-        {/* Black keys overlay */}
-        <div className="absolute inset-0 pointer-events-none" style={{ zIndex: 25 }}>
-          {blackDefs.map(({ note, pos }) => {
-            const leftPx = (pos + 1) * WHITE_W - BLACK_W / 2;
-            return (
-              <div
-                key={note}
-                className="absolute pointer-events-auto"
-                style={{ left: leftPx, top: 0, width: BLACK_W, height: BLACK_H, zIndex: 26 }}
-              >
-                <button
-                  className="relative w-full h-full transition-all duration-75 rounded-b-sm flex flex-col items-center justify-end pb-0.5"
-                  style={getKeyStyle(note)}
-                  onMouseDown={() => onKeyPress(note)}
-                  onMouseUp={() => onKeyRelease(note)}
-                  onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
-                  onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
-                  onTouchEnd={() => onKeyRelease(note)}
-                >
-                  {showLabel(note) && (
-                    <span className="text-[7px] font-bold text-white leading-none">
-                      {NOTE_NAMES[note % 12]}
-                    </span>
-                  )}
-                </button>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="bg-black/60 rounded-xl px-3 pt-2 pb-2 border border-purple-500/20">
-      {/* Keyboard row */}
-      <div className="flex overflow-x-auto gap-px min-w-fit pb-1 select-none">
-        {Array.from({ length: OCTAVES }, (_, i) => renderOctave(i))}
+      {/* Scrollable keyboard strip */}
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto pb-1 select-none"
+        style={{ WebkitOverflowScrolling: 'touch' } as React.CSSProperties}
+      >
+        <div
+          className="relative flex-shrink-0"
+          style={{ width: TOTAL_WIDTH, height: WHITE_H }}
+        >
+          {/* White keys */}
+          {layout.whites.map(({ note, wIdx }) => {
+            const isC   = note % 12 === 0;
+            const oct   = Math.floor(note / 12) - 1;
+            const inAct = activeOctave !== null && Math.floor(note / 12) === activeOctave;
+            return (
+              <button
+                key={note}
+                className="absolute transition-all duration-75 rounded-b-sm flex flex-col items-center justify-end pb-1 border-r border-gray-400/20"
+                style={{
+                  left: wIdx * WHITE_W,
+                  top: 0,
+                  width: WHITE_W,
+                  height: WHITE_H,
+                  ...getKeyStyle(note),
+                }}
+                onMouseDown={() => onKeyPress(note)}
+                onMouseUp={() => onKeyRelease(note)}
+                onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
+                onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
+                onTouchEnd={() => onKeyRelease(note)}
+              >
+                {showLabel(note) && (
+                  <span className="text-[9px] font-bold text-gray-700 leading-none">
+                    {NOTE_NAMES[note % 12]}
+                  </span>
+                )}
+                {isC && (
+                  <span
+                    className={`text-[7px] font-bold leading-none ${inAct ? 'text-cyan-500' : 'text-gray-500/60'}`}
+                    style={{ marginTop: 1 }}
+                  >
+                    C{oct}
+                  </span>
+                )}
+              </button>
+            );
+          })}
+
+          {/* Active-octave cyan top bar */}
+          {activeOctave !== null && (() => {
+            const firstNote = layout.whites.find(k => Math.floor(k.note / 12) === activeOctave);
+            const lastNote  = [...layout.whites].reverse().find(k => Math.floor(k.note / 12) === activeOctave);
+            if (!firstNote || !lastNote) return null;
+            const left  = firstNote.wIdx * WHITE_W;
+            const right = (lastNote.wIdx + 1) * WHITE_W;
+            return (
+              <div
+                className="absolute top-0 pointer-events-none"
+                style={{
+                  left,
+                  width: right - left,
+                  height: 2,
+                  background: '#22d3ee',
+                  boxShadow: '0 0 6px #22d3ee, 0 0 12px #22d3ee',
+                  zIndex: 30,
+                }}
+              />
+            );
+          })()}
+
+          {/* Black keys — rendered on top */}
+          {layout.blacks.map(({ note, left }) => (
+            <button
+              key={note}
+              className="absolute transition-all duration-75 rounded-b-sm flex flex-col items-center justify-end pb-0.5"
+              style={{
+                left,
+                top: 0,
+                width: BLACK_W,
+                height: BLACK_H,
+                zIndex: 10,
+                ...getKeyStyle(note),
+              }}
+              onMouseDown={() => onKeyPress(note)}
+              onMouseUp={() => onKeyRelease(note)}
+              onMouseLeave={() => { if (activeNotes.includes(note)) onKeyRelease(note); }}
+              onTouchStart={e => { e.preventDefault(); onKeyPress(note); }}
+              onTouchEnd={() => onKeyRelease(note)}
+            >
+              {showLabel(note) && (
+                <span className="text-[7px] font-bold text-white leading-none">
+                  {NOTE_NAMES[note % 12]}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
       </div>
 
       {/* Legend */}
@@ -215,6 +239,6 @@ const PianoKeyboard: React.FC<PianoKeyboardProps> = ({
       `}</style>
     </div>
   );
-};
+}
 
 export default PianoKeyboard;
