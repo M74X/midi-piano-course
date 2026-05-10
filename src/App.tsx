@@ -15,6 +15,7 @@ import { lessons, genreIcons, genrePresets, type Genre } from './data/synthLesso
 import { useRecorder } from './hooks/useRecorder';
 import { useLessonStore } from './store/lessonStore';
 import { useTrackStore } from './store/trackStore';
+import { buildToneChain, type ToneChain } from './utils/buildToneChain';
 
 export type LessonScore = { accuracy: number; completed: boolean };
 
@@ -53,7 +54,7 @@ const GENRE_STYLE: Record<string, { pill: string; dot: string }> = {
   synthwave:   { pill: 'bg-pink-900/40 text-pink-400 border border-pink-500/30',        dot: 'bg-pink-500'    },
   darksynth:   { pill: 'bg-red-900/40 text-red-400 border border-red-500/30',           dot: 'bg-red-500'     },
   darkphonk:   { pill: 'bg-green-900/40 text-green-400 border border-green-500/30',     dot: 'bg-green-500'   },
-  witchhouse:  { pill: 'bg-violet-900/40 text-violet-400 border border-violet-500/30',  dot: 'bg-violet-500'  },
+  darkeuphoric:  { pill: 'bg-violet-900/40 text-violet-400 border border-violet-500/30',  dot: 'bg-violet-500'  },
   industrial:  { pill: 'bg-orange-900/40 text-orange-400 border border-orange-500/30',  dot: 'bg-orange-500'  },
 };
 
@@ -183,33 +184,17 @@ function App() {
 
   // Audio nodes
   const midiDebounceRef = useRef<Map<number, number>>(new Map());
-  const toneChainRef = useRef<{
-    synth: Tone.PolySynth;
-    filter: Tone.Filter;
-    distNode: Tone.Distortion;
-    reverb: Tone.Reverb;
-    delay: Tone.FeedbackDelay;
-    chorus: Tone.Chorus;
-  } | null>(null);
+  const toneChainRef = useRef<ToneChain | null>(null);
 
   // ── Play / Stop note ─────────────────────────────────────────────────────
   const playNote = useCallback((midiNote: number, velocity = 0.8) => {
     if (!toneChainRef.current) {
       Tone.start();
-      const synth = new Tone.PolySynth(Tone.Synth, {
-        oscillator: { type: waveform },
-        envelope: { attack, decay, sustain, release },
+      toneChainRef.current = buildToneChain({
+        waveform, attack, decay, sustain, release,
+        filterCutoff, distortion, reverbMix, delayTime, delayMix, chorusRate,
       });
-      const filter = new Tone.Filter(filterCutoff, 'lowpass');
-      const distNode = new Tone.Distortion(distortion);
-      const reverb = new Tone.Reverb({ decay: 3, wet: reverbMix });
-      const delay = new Tone.FeedbackDelay(delayTime, delayMix);
-      const chorus = new Tone.Chorus(chorusRate, 3.5, 0.5);
-      synth.chain(filter, distNode, delay, chorus, reverb);
-      reverb.toDestination();
-      chorus.start();
       Tone.Destination.volume.value = (volume * 26) - 32;
-      toneChainRef.current = { synth, filter, distNode, reverb, delay, chorus };
     }
     const note = Tone.Frequency(midiNote, 'midi').toNote();
     toneChainRef.current.synth.triggerRelease(note, Tone.now());

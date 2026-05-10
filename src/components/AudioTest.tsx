@@ -4,10 +4,10 @@ import { playFull as playDarkwave } from '../audio/darkwave';
 import { playFull as playSynthwave } from '../audio/synthwave';
 import { playFull as playDarksynth } from '../audio/darksynth';
 import { playFull as playDarkphonk } from '../audio/darkphonk';
-import { playFull as playWitchhouse } from '../audio/witchhouse';
+import { playFull as playDarkeuphoric } from '../audio/darkeuphoric';
 import { playFull as playIndustrial } from '../audio/industrial';
 
-type Genre = 'darkambient' | 'darkwave' | 'synthwave' | 'darksynth' | 'darkphonk' | 'witchhouse' | 'industrial';
+type Genre = 'darkambient' | 'darkwave' | 'synthwave' | 'darksynth' | 'darkphonk' | 'darkeuphoric' | 'industrial';
 
 const GENRES: { id: Genre; label: string; fn: () => () => void }[] = [
   { id: 'darkambient', label: '🌫 Dark Ambient', fn: playDarkambient },
@@ -15,7 +15,7 @@ const GENRES: { id: Genre; label: string; fn: () => () => void }[] = [
   { id: 'synthwave',   label: '⚡ Synthwave',    fn: playSynthwave   },
   { id: 'darksynth',   label: '🔥 Dark Synth',   fn: playDarksynth   },
   { id: 'darkphonk',   label: '💀 Dark Phonk',   fn: playDarkphonk   },
-  { id: 'witchhouse',  label: '🕸 Witch House',  fn: playWitchhouse  },
+  { id: 'darkeuphoric',  label: '🕸 Dark Euphoric',  fn: playDarkeuphoric  },
   { id: 'industrial',  label: '⚙️ Industrial',   fn: playIndustrial  },
 ];
 

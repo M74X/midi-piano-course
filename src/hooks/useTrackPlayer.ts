@@ -1,32 +1,31 @@
 import { useEffect, useRef, useCallback } from 'react';
 import * as Tone from 'tone';
 import { useLessonStore } from '@/store/lessonStore';
+import { buildToneChain, type ToneChain } from '@/utils/buildToneChain';
 import type { MidiEvent } from '@/store/types';
 
 export function useTrackPlayer() {
   const preset = useLessonStore((s) => s.currentPreset);
-  const synthRef = useRef<Tone.PolySynth | null>(null);
+  const chainRef = useRef<ToneChain | null>(null);
   const scheduledRef = useRef<number[]>([]);
 
   useEffect(() => {
-    const synth = new Tone.PolySynth(Tone.Synth, {
-      oscillator: { type: preset.waveform },
-      envelope: {
-        attack: preset.attack,
-        decay: preset.decay,
-        sustain: preset.sustain,
-        release: preset.release,
-      },
-    }).toDestination();
-    synthRef.current = synth;
+    const chain = buildToneChain(preset);
+    chainRef.current = chain;
     return () => {
+      const { synth, filter, distNode, reverb, delay, chorus } = chain;
       synth.dispose();
-      synthRef.current = null;
+      filter.dispose();
+      distNode.dispose();
+      reverb.dispose();
+      delay.dispose();
+      chorus.dispose();
+      chainRef.current = null;
     };
   }, [preset]);
 
   const play = useCallback((events: MidiEvent[]) => {
-    const synth = synthRef.current;
+    const synth = chainRef.current?.synth;
     if (!synth) return;
 
     scheduledRef.current.forEach((id) => Tone.Transport.clear(id));

@@ -1,5 +1,5 @@
 export type Genre = 'darkambient' | 'darkwave' | 'synthwave'
-                 | 'darksynth' | 'darkphonk' | 'witchhouse' | 'industrial';
+                 | 'darksynth' | 'darkphonk' | 'darkeuphoric' | 'industrial';
 
 export interface SynthLesson {
   id: number;
@@ -258,7 +258,7 @@ export const genreColors: Record<Genre, { bg: string; text: string; border: stri
   synthwave:   { bg: 'from-pink-900 to-black',    text: 'text-pink-400',    border: 'border-pink-500'   },
   darksynth:   { bg: 'from-red-900 to-black',     text: 'text-red-400',     border: 'border-red-500'    },
   darkphonk:   { bg: 'from-green-900 to-black',   text: 'text-green-400',   border: 'border-green-500'  },
-  witchhouse:  { bg: 'from-violet-900 to-black',  text: 'text-violet-400',  border: 'border-violet-500' },
+  darkeuphoric:  { bg: 'from-violet-900 to-black',  text: 'text-violet-400',  border: 'border-violet-500' },
   industrial:  { bg: 'from-orange-900 to-black',  text: 'text-orange-400',  border: 'border-orange-500' },
 };
 
@@ -268,7 +268,7 @@ export const genreIcons: Record<Genre, string> = {
   synthwave:   '⚡',
   darksynth:   '🔥',
   darkphonk:   '💀',
-  witchhouse:  '🕸',
+  darkeuphoric:  '🕸',
   industrial:  '⚙️',
 };
 
@@ -358,7 +358,7 @@ export const genrePresets: Record<Genre, GenrePreset> = {
     distortion: 0.35,
     chorusRate: 0,
   },
-  witchhouse: {
+  darkeuphoric: {
     label: 'HAUNT',
     waveform: 'triangle',
     attack: 0.5,
