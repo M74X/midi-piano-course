@@ -247,6 +247,23 @@ Cada capa se aborda según la calidad de su stem:
 - **All channels same audio:** channel-keyed `Tone.Player` instances via `Map<ChannelType, Tone.Player>`
 - **PolySynth wrong preset:** `applyChannelPreset` on `setActiveChannel`
 
+## Pendientes Fase 2
+
+### Synth/FX por canal independiente
+Actualmente el panel Synth/FX es global — todos los canales comparten el mismo sintetizador visible.
+
+Lo que debe cambiar:
+- Cada canal tiene su propio panel Synth/FX
+- Al seleccionar un canal → el panel muestra y permite editar el preset de ESE canal
+- Los knobs del panel solo afectan el canal activo
+- El preset se guarda en `channelStore.channels[id].preset`
+
+### Migración Web Audio API
+Reemplazar Tone.js por Web Audio API directo:
+- `AudioWorklet` para procesamiento en thread separado
+- Sin bugs de Transport, AudioContext, o buffer cache
+- Solo cambia el motor — UI y stores se quedan igual
+
 ### Pending (post-Demo Day)
 - Migrate audio engine from Tone.js to Web Audio API
 - Channel-keyed recording implementation
