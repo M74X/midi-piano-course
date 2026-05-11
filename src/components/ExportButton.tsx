@@ -1,6 +1,7 @@
 import { useCallback } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { Midi } from '@tonejs/midi';
-import { useTrackStore } from '@/store/trackStore';
+import { useChannelStore } from '@/store/channelStore';
 
 function downloadBlob(data: Uint8Array, filename: string) {
   const blob = new Blob([data], { type: 'audio/midi' });
@@ -13,24 +14,18 @@ function downloadBlob(data: Uint8Array, filename: string) {
 }
 
 export function ExportButton() {
-  const tracks = useTrackStore((s) => s.tracks);
+  const channels = useChannelStore(useShallow((s) => s.channels));
+  const activeChannelId = useChannelStore((s) => s.activeChannelId);
 
-  const hasExportable = tracks.some(
-    (t) => t.type === 'midi' && t.events.length > 0 && !t.readonly,
-  );
+  const active = channels.find((c) => c.id === activeChannelId);
+  const hasExportable = !!active && active.recordedEvents.length > 0;
 
   const handleExport = useCallback(() => {
-    const midiTrack = tracks.find(
-      (t): t is Extract<typeof t, { type: 'midi' }> =>
-        t.type === 'midi' && t.events.length > 0 && !t.readonly,
-    );
-    if (!midiTrack) return;
-
+    if (!active || active.recordedEvents.length === 0) return;
     const midi = new Midi();
     const track = midi.addTrack();
-    track.name = midiTrack.name;
-
-    const sorted = [...midiTrack.events].sort((a, b) => a.time - b.time);
+    track.name = active.name;
+    const sorted = [...active.recordedEvents].sort((a, b) => a.time - b.time);
     for (const ev of sorted) {
       track.addNote({
         midi: ev.note,
@@ -39,10 +34,9 @@ export function ExportButton() {
         velocity: ev.velocity,
       });
     }
-
-    const safeName = midiTrack.name.replace(/[^a-zA-Z0-9_-]/g, '_');
+    const safeName = active.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     downloadBlob(midi.toArray(), `${safeName || 'recording'}.mid`);
-  }, [tracks]);
+  }, [active]);
 
   if (!hasExportable) return null;
 

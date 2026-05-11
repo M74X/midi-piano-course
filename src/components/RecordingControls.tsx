@@ -1,5 +1,5 @@
 import { useRecorder } from '@/hooks/useRecorder';
-import { useTrackStore } from '@/store/trackStore';
+import { useChannelStore } from '@/store/channelStore';
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds < 0) return '00:00';
@@ -10,14 +10,11 @@ function formatTime(seconds: number): string {
 
 export function RecordingControls() {
   const { isRecording, startRecording, stopRecording, recordingTime } = useRecorder();
-  const activeTrackId = useTrackStore((s) => s.activeTrackId);
-  const activeTrack = useTrackStore((s) =>
-    s.activeTrackId ? s.tracks.find((t) => t.id === s.activeTrackId) ?? null : null,
+  const activeChannelId = useChannelStore((s) => s.activeChannelId);
+  const hasEvents = useChannelStore(
+    (s) => (s.channels.find((c) => c.id === s.activeChannelId)?.recordedEvents.length ?? 0) > 0,
   );
-  const clearTrack = useTrackStore((s) => s.clearTrack);
-
-  const hasEvents =
-    activeTrack?.type === 'midi' && activeTrack.events.length > 0;
+  const setRecordedEvents = useChannelStore((s) => s.setRecordedEvents);
 
   return (
     <div className="flex items-center gap-3 px-3 py-1.5">
@@ -53,9 +50,7 @@ export function RecordingControls() {
 
       {!isRecording && hasEvents && (
         <button
-          onClick={() => {
-            if (activeTrackId) clearTrack(activeTrackId);
-          }}
+          onClick={() => setRecordedEvents(activeChannelId, [])}
           className="rounded px-2 py-0.5 text-xs text-white/40 transition-colors hover:bg-white/10 hover:text-white/70"
         >
           Descartar & Reintentar

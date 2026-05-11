@@ -1,34 +1,25 @@
 import Knob from './Knob';
-
-interface SynthControlsProps {
-  waveform: 'sine' | 'square' | 'sawtooth' | 'triangle';
-  setWaveform: (w: 'sine' | 'square' | 'sawtooth' | 'triangle') => void;
-  attack: number;
-  setAttack: (v: number) => void;
-  decay: number;
-  setDecay: (v: number) => void;
-  sustain: number;
-  setSustain: (v: number) => void;
-  release: number;
-  setRelease: (v: number) => void;
-  volume: number;
-  setVolume: (v: number) => void;
-  detune: number;
-  setDetune: (v: number) => void;
-}
+import { useSynthStore } from '@/store/synthStore';
 
 const WAVEFORMS: Array<'sine' | 'square' | 'sawtooth' | 'triangle'> = ['sine', 'square', 'sawtooth', 'triangle'];
 const WAVE_ICONS: Record<string, string> = { sine: '∿', square: '⊓', sawtooth: '⋀', triangle: '△' };
 
-const SynthControls: React.FC<SynthControlsProps> = ({
-  waveform, setWaveform,
-  attack, setAttack,
-  decay, setDecay,
-  sustain, setSustain,
-  release, setRelease,
-  volume, setVolume,
-  detune, setDetune,
-}) => {
+const SynthControls: React.FC = () => {
+  const waveform = useSynthStore((s) => s.waveform);
+  const setWaveform = useSynthStore((s) => s.setWaveform);
+  const attack = useSynthStore((s) => s.attack);
+  const setAttack = useSynthStore((s) => s.setAttack);
+  const decay = useSynthStore((s) => s.decay);
+  const setDecay = useSynthStore((s) => s.setDecay);
+  const sustain = useSynthStore((s) => s.sustain);
+  const setSustain = useSynthStore((s) => s.setSustain);
+  const release = useSynthStore((s) => s.release);
+  const setRelease = useSynthStore((s) => s.setRelease);
+  const volume = useSynthStore((s) => s.volume);
+  const setVolume = useSynthStore((s) => s.setVolume);
+  const detune = useSynthStore((s) => s.detune);
+  const setDetune = useSynthStore((s) => s.setDetune);
+
   const handleVolChange = (value: number) => {
     setVolume(value);
   };
@@ -55,8 +46,8 @@ const SynthControls: React.FC<SynthControlsProps> = ({
         <span className="ml-auto text-[9px] text-gray-700 font-mono">{waveform.toUpperCase()}</span>
       </div>
 
-      {/* Knob row */}
-      <div className="flex justify-around">
+      {/* Knob grid: 3 columns, 2 rows */}
+      <div className="grid grid-cols-3 gap-1 justify-items-center">
         <Knob
           label="ATK" value={attack} min={0.001} max={1} onChange={setAttack}
           color="#ec4899" format={v => `${Math.round(v * 1000)}ms`}

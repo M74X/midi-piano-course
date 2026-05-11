@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import type { Genre } from '@/data/synthLessons';
-import { genrePresets } from '@/data/synthLessons';
-import type { GenrePreset } from '@/data/synthLessons';
+import * as Tone from 'tone';
+import type { Genre, GenrePreset } from '@/data/genrePresets';
+import { genrePresets } from '@/data/genrePresets';
 
 interface LessonState {
   currentGenre: Genre;
@@ -16,5 +16,8 @@ export const useLessonStore = create<LessonState>((set) => ({
   currentPreset: genrePresets.darkwave,
   currentBpm: 120,
   setGenre: (genre) => set({ currentGenre: genre, currentPreset: genrePresets[genre] }),
-  setBpm: (bpm) => set({ currentBpm: bpm }),
+  setBpm: (bpm) => {
+    set({ currentBpm: bpm });
+    Tone.Transport.bpm.value = bpm;
+  },
 }));

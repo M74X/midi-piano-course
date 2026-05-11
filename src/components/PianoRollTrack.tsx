@@ -10,11 +10,12 @@ interface PianoRollTrackProps {
   color?: string;
 }
 
-const NOTE_HEIGHT = 4;
-const NOTE_LABEL_W = 30;
+const NOTE_HEIGHT = 6;
+const NOTE_LABEL_W = 32;
 const PPS = 80;
-const PAD_TOP = 10;
+const PAD_TOP = 8;
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+const WHITE_KEYS = new Set([0, 2, 4, 5, 7, 9, 11]);
 
 const CLASS_COLORS: Record<NoteClassification, string> = {
   'on-time': '#22c55e',
@@ -87,8 +88,8 @@ export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor
       const end = e.time + e.duration;
       if (end > mt) mt = end;
     }
-    const paddedMin = Math.max(0, mn - 6);
-    const paddedMax = Math.min(127, mx + 6);
+    const paddedMin = Math.max(0, mn - 4);
+    const paddedMax = Math.min(127, mx + 4);
     return { minNote: paddedMin, maxNote: Math.max(paddedMax, paddedMin + 12), totalTime: Math.max(mt + 1, 4) };
   }, [events, referenceEvents]);
 
@@ -124,35 +125,41 @@ export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor
 
   return (
     <div className="rounded-xl overflow-hidden border border-purple-500/20 bg-black/60">
-      <div ref={scrollRef} className="overflow-x-auto" style={{ maxHeight: 160 }}>
+      <div ref={scrollRef} className="overflow-x-auto" style={{ maxHeight: 280, minHeight: 120 }}>
         <div className="relative" style={{ width: totalW, height: totalH }}>
           {Array.from({ length: range + 1 }, (_, i) => {
             const note = maxNote - i;
+            const isWhite = WHITE_KEYS.has(note % 12);
             const isC = note % 12 === 0;
+            const y = noteToY(note);
             return (
-              <div
-                key={`g-${i}`}
-                className={
-                  'absolute left-0 right-0 border-t pointer-events-none ' +
-                  (isC ? 'border-gray-700/40' : 'border-gray-800/25')
-                }
-                style={{ top: noteToY(note) }}
-              />
-            );
-          })}
-
-          {Array.from({ length: range + 1 }, (_, i) => {
-            const note = maxNote - i;
-            const isC = note % 12 === 0;
-            if (!isC) return null;
-            const oct = Math.floor(note / 12) - 1;
-            return (
-              <div
-                key={`l-${i}`}
-                className="absolute left-1 text-[8px] font-mono text-gray-600 pointer-events-none leading-none"
-                style={{ top: noteToY(note) - 3 }}
-              >
-                {NOTE_NAMES[note % 12]}{oct}
+              <div key={`row-${i}`}>
+                {!isWhite && (
+                  <div
+                    className="absolute left-0 pointer-events-none"
+                    style={{
+                      top: y, height: NOTE_HEIGHT, width: NOTE_LABEL_W + 4,
+                      backgroundColor: 'rgba(31,41,55,0.5)',
+                      borderRight: '1px solid rgba(75,85,99,0.3)',
+                    }}
+                  />
+                )}
+                <div
+                  className={
+                    'absolute left-0 right-0 border-t pointer-events-none ' +
+                    (isC ? 'border-gray-600/50' : isWhite ? 'border-gray-800/30' : 'border-gray-800/15')
+                  }
+                  style={{ top: y }}
+                />
+                <div
+                  className="absolute pointer-events-none text-[9px] font-mono leading-none"
+                  style={{
+                    left: 2, top: y + 0.5,
+                    color: isC ? '#d1d5db' : isWhite ? '#6b7280' : 'transparent',
+                  }}
+                >
+                  {NOTE_NAMES[note % 12]}{isC ? Math.floor(note / 12) - 1 : ''}
+                </div>
               </div>
             );
           })}
@@ -167,8 +174,9 @@ export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor
                 className="absolute rounded-sm pointer-events-none"
                 style={{
                   left: x, top: y, width: w, height: NOTE_HEIGHT,
-                  backgroundColor: '#6b7280',
-                  opacity: 0.25,
+                  backgroundColor: trackColor || '#a855f7',
+                  opacity: 0.55,
+                  boxShadow: `0 0 2px ${trackColor || '#a855f7'}60`,
                 }}
               />
             );
