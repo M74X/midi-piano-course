@@ -74,32 +74,76 @@ Plataforma educativa de reconstrucción musical para géneros Dark con tres pila
 
 ## Roadmap
 
-### Fase 1 — Core DAW (Channel Rack + Transport + Piano Roll)
+### PARTE 1 — Modo Lección (Lesson Mode)
+Referentes visuales: Melodics + Piano Marvel
 
-#### 1. Channel Rack (tipo FL Studio)
-- Grid de canales por instrumento: Bass, Lead, Drums, Pads, FX
-- Cada canal con: mute/solo, volume, pan, MIDI clip asignado
-- Playback independiente por canal con Tone.Part o Tone.Sequence
-- Load/Save de patrones por género
+#### Flujo completo de una lección:
+1. Estudiante selecciona canal (Lead, Bass, etc.)
+2. Presiona LESSON mode toggle
+3. DEMO: canción suena sola, notas avanzan automáticamente, estudiante escucha
+4. COUNTDOWN: metrónomo visual 1→2→3→4 en el centro del Piano Roll, sonido de metrónomo en cada beat
+5. PRÁCTICA: cursor fijo amarillo vertical, notas avanzan de derecha a izquierda, estudiante toca en el momento exacto
+6. RESULTADOS: score final + breakdown
 
-#### 2. Transport
-- Play / Stop / Record / Loop
-- BPM control (sync con Tone.Transport)
-- Metrónomo (audio + visual flash por beat)
-- Cursor de transporte sincronizado con piano roll y channel rack
-- Cuantización (1/4, 1/8, 1/16)
+#### Lo que se ve en pantalla (Melodics style):
+- Mini overview arriba: canción completa de un vistazo, posición actual resaltada
+- Piano Roll en modo lesson:
+  cursor fijo vertical amarillo al centro-izquierda
+  notas avanzan desde derecha hacia cursor
+  nombre de nota dentro de cada rectángulo
+  al pasar por el cursor: verde=hit, rojo=miss, amarillo=early/late
+- Teclado abajo: tecla próxima resaltada en azul antes de llegar al cursor (guía visual de qué tecla presionar)
+- Countdown animado: número grande en centro del Piano Roll antes de empezar (1, 2, 3, 4)
 
-#### 3. Piano Roll
-- Grid de notas MIDI (pitch vs time)
-- Edición: dibujar, borrar, mover, redimensionar notas
-- Snap to grid
-- Roll de referencia (MIDI de Basic Pitch superpuesto)
-- Roll de la toma grabada
+#### Diferencia modo EDIT vs modo LESSON:
+EDIT (actual):
+  - Cursor/playhead se mueve
+  - Notas son fijas, editables
+  - Click para crear/borrar/mover notas
 
-#### 4. Session View (tipo Ableton)
-- Grid de clips lanzables por scenes/tracks
-- Clip recording, overdub, follow actions
-- Escenas por sección de canción (intro, verso, drop, outro)
+LESSON:
+  - Cursor fijo (posición fija en pantalla)
+  - Notas se mueven de derecha a izquierda
+  - No se pueden editar las notas
+  - Input MIDI detectado en tiempo real
+
+#### Hit detection:
+- Ventana de timing: ±1/8 beat
+- Correct: nota tocada dentro de la ventana
+- Early: nota tocada antes de la ventana
+- Late: nota tocada después de la ventana
+- Miss: nota pasó el cursor sin ser tocada
+- Tecla incorrecta: nota tocada pero pitch errado
+
+#### Scoring:
+- Correct: +100 puntos
+- Early/Late: +50 puntos
+- Miss: 0 puntos
+- Streak bonus: x2 después de 10 correctas seguidas
+- Velocímetro: % precisión rolling de últimas 10 notas
+
+#### BPM slow mode:
+- Slider de velocidad: 25% / 50% / 75% / 100%
+- Reduce BPM sin cambiar el pitch del audio
+- Las notas se mueven más lento manteniendo las mismas posiciones relativas
+
+#### Componentes nuevos necesarios:
+- LessonMode.tsx (wrapper, toggle edit/lesson)
+- LessonPianoRoll.tsx (Piano Roll con notas móviles)
+- CountdownOverlay.tsx (1-2-3-4 animado)
+- MiniOverview.tsx (mini mapa de la canción arriba)
+- HitDetector.ts (timing window ±1/8 beat)
+- ScoreHUD.tsx (score + streak + velocímetro)
+- ResultsScreen.tsx (pantalla final)
+- KeyHighlight (ya existe en PianoKeyboard.tsx, extender para resaltar próxima nota)
+
+#### Lo que ya existe y sirve sin cambios:
+- Piano Roll con notas de Blacktop Mirage
+- audioEngine.setBPM() para slow mode
+- audioEngine metrónomo para countdown
+- PianoKeyboard.tsx para highlight de teclas
+- channelStore.notes como fuente de notas
+- Web MIDI API (navigator.requestMIDIAccess) pendiente de integrar hit detection
 
 ---
 
@@ -247,6 +291,41 @@ Cada capa se aborda según la calidad de su stem:
 - **All channels same audio:** channel-keyed `Tone.Player` instances via `Map<ChannelType, Tone.Player>`
 - **PolySynth wrong preset:** `applyChannelPreset` on `setActiveChannel`
 
+## Session — May 11, 2026 — Fase 1 Complete
+
+### Fase 1 — Piano Roll visual redesign COMPLETE
+- Ableton-style proportions (18px rows → 10px, keys 28px narrow)
+- Purple-grey background (#2d2d3d / #252535)
+- Black key row overlays
+- Note labels (pitch name inside note if width > 20px)
+- Velocity lane 32px at bottom
+- Playhead vertical line
+- max-h-[35vh] container cap
+- Initial scroll centered on C3
+
+### Fase 1 — All FIXes COMPLETE (0-B through 6)
+See previous log entries.
+
+### Bundle size
+- Tone.js removed: 544KB → 293KB (46% reduction)
+
+### Next session
+- Channel Rack redesign: step sequencer FL-style
+  + add channel button
+  + instrument selector per channel
+- Arrangement View: separate brief
+
+### PENDIENTE
+- Piano Roll height fix (35vh)
+- Piano Roll playhead bug (línea horizontal)
+- Piano Roll velocity lane densa
+- Channel Rack rediseño completo (step sequencer FL style)
+- Arrangement View (drag and drop)
+- + botón para agregar canales
+- Instrumento selector por canal
+
+---
+
 ## Pendientes Fase 2
 
 ### Synth/FX por canal independiente
@@ -277,3 +356,58 @@ aaf3803 fix: volume disparity, Tone.js audio engine migration, recording infrast
 0948a05 refactor: shared ToneChain builder, witchhouse→darkeuphoric, project log
 d68f964 chore: remove Zone.Identifier files and add to gitignore
 ```
+
+---
+
+## Sesión 2026-05-11 — Cierre de día
+
+### Completado hoy:
+- Web Audio API migration (Tone.js eliminado)
+  Bundle: 544KB → 293KB (46% reducción)
+- FIX 0-B al FIX 6 completos
+- Piano Roll visual rediseño (Ableton style)
+  row 10px, keys 28px, fondo #2d2d3d/#252535
+  velocity lane flotante con toggle VEL
+  scrollbars ocultos, max-h-[35vh]
+  scroll inicial centrado en notas activas
+- Arquitectura de dos partes documentada
+- Diseño completo Parte 1 (Lesson Mode) en log
+- Decisión: Piano Roll en lugar de partitura
+  (pedagógicamente equivalente, 10x más simple)
+
+### Decisiones técnicas tomadas:
+- Drums → samples reales (Freesound.org CC0)
+  kick.wav / snare.wav / hihat.wav / clap.wav
+- Lead/Bass/Pads/FX → OscillatorNode (ya funcionan)
+- Sound matching: Audacity Plot Spectrum
+  para analizar other.wav y afinar ADSR/waveform
+- Session View → eliminar en próxima sesión
+  (no aporta al flujo educativo)
+- Modelo de negocio: 4 canciones = producto vendible
+  $5-8/mes, diferencial = aprende a tocar Y producir
+
+### Pendiente próxima sesión (fin de semana):
+1. Audacity → Plot Spectrum de other.wav (Lead)
+   confirmar waveform + afinar ADSR
+2. Freesound.org → descargar samples CC0:
+   kick, snare, hihat, clap (808 style)
+3. Channel Rack rediseño completo:
+   step sequencer estilo FL Studio
+   botón + para agregar canales
+   selector de instrumento por canal
+   Drums usa samples, resto usa synth
+4. Lesson Mode implementación:
+   LessonPianoRoll.tsx (notas móviles, cursor fijo)
+   CountdownOverlay.tsx (1-2-3-4 animado)
+   HitDetector.ts (timing ±1/8 beat)
+   ScoreHUD.tsx (score + streak)
+   MiniOverview.tsx (mapa arriba)
+   ResultsScreen.tsx
+5. MIDI CC mapping → Fase 3 (no tocar aún)
+
+### Stack de herramientas confirmado:
+- Cascade (Windsurf) → desarrollo diario
+- Kiro free tier → auditorías de seguridad únicamente
+- Big Pickle → tareas largas + system design
+- Claude → arquitectura + diseño pedagógico
+- Audacity → análisis de stems

@@ -1,17 +1,21 @@
 import { useEffect, useCallback, useState } from 'react';
-import * as Tone from 'tone';
+import { audioEngine } from '@/audio/audioEngine';
 import { useChannelStore } from '@/store/channelStore';
+
+function getTransportSeconds(): number {
+  return audioEngine.currentBeat * (60 / audioEngine.bpm);
+}
 
 export function useRecorder() {
   const [recordingTime, setRecordingTime] = useState(0);
   const isRecording = useChannelStore((s) => s.isRecording);
 
   const handleMidiNoteOn = useCallback((note: number, velocity: number) => {
-    useChannelStore.getState().noteOn(note, velocity, Tone.Transport.seconds);
+    useChannelStore.getState().noteOn(note, velocity, getTransportSeconds());
   }, []);
 
   const handleMidiNoteOff = useCallback((note: number) => {
-    useChannelStore.getState().noteOff(note, Tone.Transport.seconds);
+    useChannelStore.getState().noteOff(note, getTransportSeconds());
   }, []);
 
   useEffect(() => {
@@ -20,12 +24,12 @@ export function useRecorder() {
       return;
     }
     const id = setInterval(() => {
-      if (Tone.Transport.state === 'stopped') {
-        useChannelStore.getState().stopRecording(Tone.Transport.seconds);
+      if (!audioEngine.isPlaying) {
+        useChannelStore.getState().stopRecording(getTransportSeconds());
         return;
       }
       setRecordingTime(
-        Tone.Transport.seconds - useChannelStore.getState().recordingStartTime,
+        getTransportSeconds() - useChannelStore.getState().recordingStartTime,
       );
     }, 100);
     return () => clearInterval(id);
@@ -33,15 +37,16 @@ export function useRecorder() {
 
   const startRecording = useCallback(() => {
     if (useChannelStore.getState().isRecording) return;
-    if (Tone.Transport.state !== 'started') {
-      Tone.Transport.start();
+    if (!audioEngine.isPlaying) {
+      audioEngine.init();
+      audioEngine.play();
     }
-    useChannelStore.getState().startRecording(Tone.Transport.seconds);
+    useChannelStore.getState().startRecording(getTransportSeconds());
   }, []);
 
   const stopRecording = useCallback(() => {
     if (!useChannelStore.getState().isRecording) return;
-    useChannelStore.getState().stopRecording(Tone.Transport.seconds);
+    useChannelStore.getState().stopRecording(getTransportSeconds());
   }, []);
 
   return {

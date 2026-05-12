@@ -1,8 +1,16 @@
 import { create } from 'zustand';
 import type { MidiEvent } from './types';
-import { useSynthStore, type ChannelPreset } from './synthStore';
+import type { ChannelPreset } from './synthStore';
 
 export type ChannelType = 'drums' | 'lead' | 'bass' | 'pads' | 'fx';
+
+export interface NoteData {
+  id: string;
+  pitch: number;
+  startBeat: number;
+  durationBeats: number;
+  velocity: number;
+}
 
 export interface ChannelData {
   id: ChannelType;
@@ -13,6 +21,7 @@ export interface ChannelData {
   pan: number;          // -1..1 (0 = center)
   referenceEvents: MidiEvent[];
   recordedEvents: MidiEvent[];
+  notes: NoteData[];
   color: string;
   audioSrc?: string;
   refEnabled: boolean;
@@ -36,8 +45,13 @@ interface ChannelState {
   toggleRef: (id: ChannelType) => void;
   setVolume: (id: ChannelType, volume: number) => void;
   setPan: (id: ChannelType, pan: number) => void;
+  updatePreset: (id: ChannelType, updates: Partial<ChannelPreset>) => void;
   setReferenceEvents: (id: ChannelType, events: MidiEvent[]) => void;
   setRecordedEvents: (id: ChannelType, events: MidiEvent[]) => void;
+  setNotes: (id: ChannelType, notes: NoteData[]) => void;
+  addNote: (id: ChannelType, note: NoteData) => void;
+  deleteNote: (id: ChannelType, noteId: string) => void;
+  updateNote: (id: ChannelType, noteId: string, updates: Partial<NoteData>) => void;
 
   startRecording: (transportTime: number) => void;
   stopRecording: (transportTime: number) => void;
@@ -46,24 +60,24 @@ interface ChannelState {
 }
 
 const CHANNEL_PRESETS: Record<ChannelType, ChannelPreset> = {
-  drums:  { waveform: 'square',  attack: 0.001, decay: 0.1,  sustain: 0,   release: 0.1,  filterCutoff: 8000,  distortion: 0.4, reverbMix: 0.1,  chorusRate: 0 },
-  lead:   { waveform: 'sawtooth',attack: 0.02,  decay: 0.3,  sustain: 0.6, release: 0.4,  filterCutoff: 3000,  distortion: 0,   reverbMix: 0.3,  chorusRate: 0.3 },
-  bass:   { waveform: 'sawtooth',attack: 0.01,  decay: 0.4,  sustain: 0.7, release: 0.3,  filterCutoff: 800,   distortion: 0.2, reverbMix: 0.05, chorusRate: 0 },
-  pads:   { waveform: 'sine',    attack: 0.8,   decay: 0.6,  sustain: 0.8, release: 1.2,  filterCutoff: 2000,  distortion: 0,   reverbMix: 0.6,  chorusRate: 0.5 },
-  fx:     { waveform: 'sine',    attack: 1.0,   decay: 0.8,  sustain: 0.5, release: 2.0,  filterCutoff: 1200,  distortion: 0,   reverbMix: 0.8,  chorusRate: 0 },
+  drums:  { waveform: 'square',  attack: 0.001, decay: 0.1,  sustain: 0,   release: 0.05, filterCutoff: 2000, filterType: 'highpass', distortion: 0.4, reverbMix: 0.1,  delayTime: 0.1,  delayMix: 0,   chorusRate: 0,  detune: 0 },
+  lead:   { waveform: 'sawtooth',attack: 0.01,  decay: 0.15, sustain: 0.6, release: 0.2,  filterCutoff: 3000, filterType: 'lowpass',  distortion: 0,   reverbMix: 0.3,  delayTime: 0.4,  delayMix: 0.2,  chorusRate: 0.3, detune: 5 },
+  bass:   { waveform: 'sawtooth',attack: 0.01,  decay: 0.3,  sustain: 0.8, release: 0.3,  filterCutoff: 800,  filterType: 'lowpass',  distortion: 0.2, reverbMix: 0.05, delayTime: 0.15, delayMix: 0.1,  chorusRate: 0,  detune: 0 },
+  pads:   { waveform: 'sine',    attack: 0.3,   decay: 0.2,  sustain: 0.7, release: 0.5,  filterCutoff: 1200, filterType: 'lowpass',  distortion: 0,   reverbMix: 0.6,  delayTime: 0.5,  delayMix: 0.3,  chorusRate: 0.5, detune: 0 },
+  fx:     { waveform: 'triangle',attack: 0.05,  decay: 0.2,  sustain: 0.4, release: 0.4,  filterCutoff: 5000, filterType: 'bandpass', distortion: 0,   reverbMix: 0.8,  delayTime: 0.3,  delayMix: 0.4,  chorusRate: 0,  detune: 0 },
 };
 
 const INITIAL_CHANNELS: ChannelData[] = [
-  { id: 'drums', name: 'Drums', muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], color: '#f59e0b', audioSrc: '/audio/blacktop-mirage/drums.wav', refEnabled: false, preset: CHANNEL_PRESETS.drums },
-  { id: 'lead',  name: 'Lead',  muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], color: '#ec4899', audioSrc: '/audio/blacktop-mirage/other.wav', refEnabled: false, preset: CHANNEL_PRESETS.lead },
-  { id: 'bass',  name: 'Bass',  muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], color: '#22d3ee', audioSrc: '/audio/blacktop-mirage/bass.wav', refEnabled: false, preset: CHANNEL_PRESETS.bass },
-  { id: 'pads',  name: 'Pads',  muted: false, soloed: false, volume: 0.7, pan: 0, referenceEvents: [], recordedEvents: [], color: '#a855f7', refEnabled: false, preset: CHANNEL_PRESETS.pads },
-  { id: 'fx',    name: 'FX',    muted: false, soloed: false, volume: 0.6, pan: 0, referenceEvents: [], recordedEvents: [], color: '#10b981', refEnabled: false, preset: CHANNEL_PRESETS.fx },
+  { id: 'drums', name: 'Drums', muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], notes: [], color: '#f59e0b', audioSrc: '/audio/blacktop-mirage/drums.wav', refEnabled: false, preset: CHANNEL_PRESETS.drums },
+  { id: 'lead',  name: 'Lead',  muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], notes: [], color: '#ec4899', audioSrc: '/audio/blacktop-mirage/other.wav', refEnabled: false, preset: CHANNEL_PRESETS.lead },
+  { id: 'bass',  name: 'Bass',  muted: false, soloed: false, volume: 0.8, pan: 0, referenceEvents: [], recordedEvents: [], notes: [], color: '#22d3ee', audioSrc: '/audio/blacktop-mirage/bass.wav', refEnabled: false, preset: CHANNEL_PRESETS.bass },
+  { id: 'pads',  name: 'Pads',  muted: false, soloed: false, volume: 0.7, pan: 0, referenceEvents: [], recordedEvents: [], notes: [], color: '#a855f7', refEnabled: false, preset: CHANNEL_PRESETS.pads },
+  { id: 'fx',    name: 'FX',    muted: false, soloed: false, volume: 0.6, pan: 0, referenceEvents: [], recordedEvents: [], notes: [], color: '#10b981', refEnabled: false, preset: CHANNEL_PRESETS.fx },
 ];
 
 export const useChannelStore = create<ChannelState>((set, get) => ({
   channels: INITIAL_CHANNELS,
-  activeChannelId: 'lead',
+  activeChannelId: 'drums',
 
   isRecording: false,
   recordingChannelId: null,
@@ -72,10 +86,6 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
 
   setActiveChannel: (id) => {
     set({ activeChannelId: id });
-    const channel = get().channels.find((c) => c.id === id);
-    if (channel) {
-      useSynthStore.getState().applyChannelPreset(channel.preset);
-    }
   },
 
   toggleMute: (id) =>
@@ -113,6 +123,13 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
       ),
     }),
 
+  updatePreset: (id, updates) =>
+    set({
+      channels: get().channels.map((c) =>
+        c.id === id ? { ...c, preset: { ...c.preset, ...updates } } : c,
+      ),
+    }),
+
   setReferenceEvents: (id, events) =>
     set({
       channels: get().channels.map((c) =>
@@ -124,6 +141,36 @@ export const useChannelStore = create<ChannelState>((set, get) => ({
     set({
       channels: get().channels.map((c) =>
         c.id === id ? { ...c, recordedEvents: events } : c,
+      ),
+    }),
+
+  setNotes: (id, notes) =>
+    set({
+      channels: get().channels.map((c) =>
+        c.id === id ? { ...c, notes } : c,
+      ),
+    }),
+
+  addNote: (id, note) =>
+    set({
+      channels: get().channels.map((c) =>
+        c.id === id ? { ...c, notes: [...c.notes, note] } : c,
+      ),
+    }),
+
+  deleteNote: (id, noteId) =>
+    set({
+      channels: get().channels.map((c) =>
+        c.id === id ? { ...c, notes: c.notes.filter((n) => n.id !== noteId) } : c,
+      ),
+    }),
+
+  updateNote: (id, noteId, updates) =>
+    set({
+      channels: get().channels.map((c) =>
+        c.id === id
+          ? { ...c, notes: c.notes.map((n) => (n.id === noteId ? { ...n, ...updates } : n)) }
+          : c,
       ),
     }),
 

@@ -1,7 +1,7 @@
 import { create } from 'zustand';
-import * as Tone from 'tone';
 import type { Genre, GenrePreset } from '@/data/genrePresets';
 import { genrePresets } from '@/data/genrePresets';
+import { audioEngine } from '@/audio/audioEngine';
 
 interface LessonState {
   currentGenre: Genre;
@@ -18,6 +18,6 @@ export const useLessonStore = create<LessonState>((set) => ({
   setGenre: (genre) => set({ currentGenre: genre, currentPreset: genrePresets[genre] }),
   setBpm: (bpm) => {
     set({ currentBpm: bpm });
-    Tone.Transport.bpm.value = bpm;
+    audioEngine.setBPM(bpm);
   },
 }));

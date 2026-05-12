@@ -1,7 +1,7 @@
-import { useEffect, useRef, useMemo } from 'react';
-import * as Tone from 'tone';
+import { useRef, useMemo } from 'react';
+import { usePlayheadStore } from '@/store/playheadStore';
 import { getNoteColor } from '@/utils/noteColors';
-import type { MidiEvent, NoteClassification } from '@/store/types';
+import type { MidiEvent } from '@/store/types';
 
 interface PianoRollTrackProps {
   events: MidiEvent[];
@@ -17,66 +17,10 @@ const PAD_TOP = 8;
 const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
 const WHITE_KEYS = new Set([0, 2, 4, 5, 7, 9, 11]);
 
-const CLASS_COLORS: Record<NoteClassification, string> = {
-  'on-time': '#22c55e',
-  early: '#eab308',
-  late: '#f59e0b',
-  missed: '#6b7280',
-  extra: '#ef4444',
-};
-
-function compareEvents(reference: MidiEvent[], student: MidiEvent[], bpm: number) {
-  const intervalMs = 60000 / bpm;
-  const toleranceMs = Math.max(50, Math.min(200, intervalMs * 0.3));
-  const toleranceSec = toleranceMs / 1000;
-
-  const sortedRef = [...reference].sort((a, b) => a.time - b.time);
-  const sortedStu = [...student].sort((a, b) => a.time - b.time);
-  const used = new Set<number>();
-  const results: Array<{ idx: number; classification: NoteClassification }> = new Array(student.length).fill(null);
-
-  for (const ref of sortedRef) {
-    let bestIdx = -1;
-    let bestDelta = Infinity;
-
-    for (let i = 0; i < sortedStu.length; i++) {
-      if (used.has(i)) continue;
-      if (sortedStu[i].note !== ref.note) continue;
-      const delta = Math.abs(sortedStu[i].time - ref.time);
-      if (delta < bestDelta) {
-        bestDelta = delta;
-        bestIdx = i;
-      }
-    }
-
-    if (bestIdx !== -1 && bestDelta <= toleranceSec) {
-      const stu = sortedStu[bestIdx];
-      used.add(bestIdx);
-      const deltaMs = (stu.time - ref.time) * 1000;
-      results[bestIdx] = {
-        idx: bestIdx,
-        classification: deltaMs < -toleranceMs / 2 ? 'early' : deltaMs > toleranceMs / 2 ? 'late' : 'on-time',
-      };
-    }
-  }
-
-  for (let i = 0; i < sortedStu.length; i++) {
-    if (used.has(i)) continue;
-    results[i] = { idx: i, classification: 'extra' };
-  }
-
-  const colorMap = new Map<number, string>();
-  for (const r of results) {
-    if (r) {
-      colorMap.set(r.idx, CLASS_COLORS[r.classification]);
-    }
-  }
-  return colorMap;
-}
-
 export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor }: PianoRollTrackProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
-  const cursorRef = useRef<HTMLDivElement>(null);
+  const currentBeat = usePlayheadStore((s) => s.currentBeat);
+  const isPlaying = usePlayheadStore((s) => s.isPlaying);
 
   const { minNote, maxNote, totalTime } = useMemo(() => {
     let mn = Infinity, mx = -Infinity, mt = 0;
@@ -93,35 +37,14 @@ export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor
     return { minNote: paddedMin, maxNote: Math.max(paddedMax, paddedMin + 12), totalTime: Math.max(mt + 1, 4) };
   }, [events, referenceEvents]);
 
-  useEffect(() => {
-    let raf: number;
-    function tick() {
-      if (cursorRef.current) {
-        const pos = Tone.Transport.seconds * PPS + NOTE_LABEL_W;
-        cursorRef.current.style.transform = `translateX(${pos}px)`;
-      }
-      raf = requestAnimationFrame(tick);
-    }
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, []);
-
-  const eventColors = useMemo(() => {
-    if (!referenceEvents || !bpm) return null;
-    return compareEvents(referenceEvents, events, bpm);
-  }, [events, referenceEvents, bpm]);
-
   const range = maxNote - minNote;
   const totalH = range * NOTE_HEIGHT + PAD_TOP * 2;
   const totalW = totalTime * PPS + NOTE_LABEL_W + 20;
   const noteToY = (n: number) => PAD_TOP + (maxNote - n) * NOTE_HEIGHT;
 
-  if (events.length === 0 && (!referenceEvents || referenceEvents.length === 0)) return null;
+  const cursorX = isPlaying ? currentBeat * (PPS / 4) + NOTE_LABEL_W : -100;
 
-  function getBarColor(i: number, ev: MidiEvent): string {
-    if (eventColors) return eventColors.get(i) ?? CLASS_COLORS.extra;
-    return trackColor || getNoteColor(ev.note);
-  }
+  if (events.length === 0 && (!referenceEvents || referenceEvents.length === 0)) return null;
 
   return (
     <div className="rounded-xl overflow-hidden border border-purple-500/20 bg-black/60">
@@ -186,26 +109,27 @@ export function PianoRollTrack({ events, referenceEvents, bpm, color: trackColor
             const x = ev.time * PPS + NOTE_LABEL_W;
             const w = Math.max(ev.duration * PPS, 2);
             const y = noteToY(ev.note);
-            const c = getBarColor(i, ev);
             return (
               <div
                 key={i}
                 className="absolute rounded-sm"
                 style={{
                   left: x, top: y, width: w, height: NOTE_HEIGHT,
-                  backgroundColor: c,
-                  opacity: eventColors ? 0.9 : 0.8,
+                  backgroundColor: getNoteColor(ev.note),
+                  opacity: 0.8,
                 }}
                 title={`${NOTE_NAMES[ev.note % 12]}${Math.floor(ev.note / 12) - 1} @ ${ev.time.toFixed(2)}s`}
               />
             );
           })}
 
-          <div
-            ref={cursorRef}
-            className="absolute top-0 bottom-0 w-px bg-cyan-400/60 pointer-events-none z-10"
-            style={{ left: 0 }}
-          />
+          {/* Playhead cursor */}
+          {isPlaying && (
+            <div
+              className="absolute top-0 bottom-0 w-px bg-cyan-400/60 pointer-events-none z-10"
+              style={{ left: cursorX }}
+            />
+          )}
         </div>
       </div>
     </div>

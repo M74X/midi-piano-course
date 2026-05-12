@@ -11,9 +11,13 @@ export interface ChannelPreset {
   sustain: number;
   release: number;
   filterCutoff: number;
+  filterType: BiquadFilterType;
   distortion: number;
   reverbMix: number;
+  delayTime: number;
+  delayMix: number;
   chorusRate: number;
+  detune: number;
 }
 
 export interface SynthState {
@@ -118,7 +122,10 @@ export const useSynthStore = create<SynthState>((set) => ({
       filterCutoff: preset.filterCutoff,
       distortion: preset.distortion,
       reverbMix: preset.reverbMix,
+      delayTime: preset.delayTime,
+      delayMix: preset.delayMix,
       chorusRate: preset.chorusRate,
+      detune: preset.detune,
     });
   },
 }));

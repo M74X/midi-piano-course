@@ -1,5 +1,5 @@
 import { useChannelStore, type ChannelType } from '@/store/channelStore';
-import { useSynthStore } from '@/store/synthStore';
+import { useSessionStore } from '@/store/sessionStore';
 import Knob from './Knob';
 
 interface ChannelStripProps {
@@ -32,30 +32,47 @@ export function ChannelStrip({ channelId }: ChannelStripProps) {
   const setVolume = useChannelStore((s) => s.setVolume);
   const setPan = useChannelStore((s) => s.setPan);
 
-  const waveform = useSynthStore((s) => s.waveform);
-  const setWaveform = useSynthStore((s) => s.setWaveform);
+  const updatePreset = useChannelStore((s) => s.updatePreset);
+  const waveform = useChannelStore((s) => s.channels.find((c) => c.id === channelId)!.preset.waveform);
+  const currentScene = useSessionStore((s) => s.currentScene);
+  const setClip = useSessionStore((s) => s.setClip);
 
   const isActive = channelId === activeChannelId;
+
+  const handleSaveClip = () => {
+    const ch = useChannelStore.getState().channels.find((c) => c.id === channelId);
+    if (!ch || ch.notes.length === 0) return;
+    setClip(currentScene, channelId, {
+      name: `${ch.name} clip`,
+      hasNotes: true,
+      notes: ch.notes.map((n) => ({ ...n })),
+    });
+  };
 
   return (
     <div
       onClick={() => setActiveChannel(channelId)}
       className={`flex flex-col gap-1.5 p-2 rounded cursor-pointer transition-all select-none ${
         isActive
-          ? 'bg-white/10 border border-cyan-500/30'
-          : 'hover:bg-white/5 border border-transparent'
+          ? 'bg-white/10'
+          : 'hover:bg-white/5'
       }`}
-      style={{ width: 80 }}
+      style={{ width: 80, borderLeft: isActive ? `3px solid ${color}` : '3px solid transparent' }}
     >
-      {/* Color dot + name */}
+      {/* Color dot + name + save */}
       <div className="flex items-center gap-1">
         <span
           className="w-2 h-2 rounded-full flex-shrink-0"
           style={{ backgroundColor: color }}
         />
-        <span className="text-[10px] font-bold text-white/70 truncate">
+        <span className="text-[10px] font-bold text-white/70 truncate flex-1">
           {name}
         </span>
+        <button
+          onClick={(e) => { e.stopPropagation(); handleSaveClip(); }}
+          className="w-4 h-4 rounded text-[9px] bg-gray-900 text-gray-600 hover:text-cyan-400 hover:bg-gray-800 flex items-center justify-center flex-shrink-0"
+          title="Save clip to Session View"
+        >💾</button>
       </div>
 
       {/* Waveform selector — all channels share the single synth */}
@@ -63,7 +80,7 @@ export function ChannelStrip({ channelId }: ChannelStripProps) {
         {WAVEFORMS.map((w) => (
           <button
             key={w}
-            onClick={(e) => { e.stopPropagation(); setWaveform(w); }}
+            onClick={(e) => { e.stopPropagation(); updatePreset(channelId, { waveform: w }); }}
             className={`w-5 h-5 rounded text-[10px] font-bold transition-all ${
               waveform === w
                 ? 'bg-pink-500/30 text-pink-400 border border-pink-500/50'
